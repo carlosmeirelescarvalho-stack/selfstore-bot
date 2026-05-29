@@ -1,7 +1,7 @@
 # SelfStore Bot — Guia de Deploy
 
 ## O que é
-Chatbot WhatsApp para controle de acesso ao Self Store do condomínio.
+Chatbot WhatsApp para controle de acesso ao Self Store do condomínio. 
 Permite cadastro de moradores via WhatsApp e abertura de geladeira via QR Code.
 
 ## Arquitetura
