@@ -108,6 +108,25 @@ app.post('/webhook/idface', async (req, res) => {
 // ─── HEALTH CHECK ─────────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok', ts: new Date() }))
 
+// ESP32 heartbeat — atualiza IP automaticamente no banco
+app.post('/esp32/heartbeat', async (req, res) => {
+  res.sendStatus(200)
+  try {
+    const secret = req.headers['x-esp32-secret']
+    if (secret !== (process.env.ESP32_SECRET || 'troque-por-uma-chave-secreta-forte')) return
+    const { geladeira, ip, evento } = req.body
+    if (!geladeira || !ip) return
+    const sb = require('./db')
+    // atualiza IP direto no banco via supabase
+    const { createClient } = require('@supabase/supabase-js')
+    const supa = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY)
+    await supa.from('geladeiras').update({ esp32_ip: ip }).ilike('nome', '%' + geladeira + '%')
+    console.log('ESP32 heartbeat:', geladeira, 'IP:', ip, evento)
+  } catch (err) {
+    console.error('Erro heartbeat ESP32:', err)
+  }
+})
+
 // ─── HELPERS ──────────────────────────────────────────────────────
 function detectarTipo(msg) {
   if (msg.imageMessage) return 'image'
