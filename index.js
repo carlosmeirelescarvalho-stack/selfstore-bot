@@ -11,6 +11,15 @@ const { handleGeladeira, isComandoGeladeira } = require('./geladeira')
 const { enviarTexto, MSG } = require('./whatsapp')
 const db = require('./db')
 
+// Helper Supabase com ws (evita erro de WebSocket no Node 20)
+const ws = require('ws')
+const { createClient: _createClient } = require('@supabase/supabase-js')
+function getSupa() {
+  return _createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, {
+    realtime: { transport: ws }
+  })
+}
+
 const app = express()
 app.use(express.json({ limit: '20mb' }))
 app.use((req, res, next) => {
