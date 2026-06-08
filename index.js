@@ -138,8 +138,7 @@ app.get('/health', (req, res) => res.json({ status: 'ok', ts: new Date() }))
 app.get('/admin/moradores', async (req, res) => {
   try {
     const { status, busca, limit = 50, offset = 0 } = req.query
-    const { createClient } = require('@supabase/supabase-js')
-    const supa = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY)
+    const supa = getSupa()
     let query = supa.from('moradores').select('*, condominios(nome)', { count: 'exact' })
     if (status && status !== 'todos') query = query.eq('status', status)
     if (busca) query = query.or(`nome.ilike.%${busca}%,cpf.ilike.%${busca}%,unidade.ilike.%${busca}%`)
@@ -216,8 +215,7 @@ app.delete('/admin/admins/:celular', async (req, res) => {
 // GET /admin/stats — estatísticas do dashboard
 app.get('/admin/stats', async (req, res) => {
   try {
-    const { createClient } = require('@supabase/supabase-js')
-    const supa = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY)
+    const supa = getSupa()
     const [total, pendentes, aprovados, logs] = await Promise.all([
       supa.from('moradores').select('*', { count: 'exact', head: true }),
       supa.from('moradores').select('*', { count: 'exact', head: true }).eq('status', 'pendente'),
@@ -237,8 +235,7 @@ app.get('/admin/stats', async (req, res) => {
 app.get('/admin/logs', async (req, res) => {
   try {
     const { tipo, resultado, limit = 50 } = req.query
-    const { createClient } = require('@supabase/supabase-js')
-    const supa = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY)
+    const supa = getSupa()
     let q = supa.from('logs_acesso')
       .select('*, moradores(nome), geladeiras(nome)')
       .order('criado_em', { ascending: false })
@@ -254,8 +251,7 @@ app.get('/admin/logs', async (req, res) => {
 // GET /admin/geladeiras
 app.get('/admin/geladeiras', async (req, res) => {
   try {
-    const { createClient } = require('@supabase/supabase-js')
-    const supa = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY)
+    const supa = getSupa()
     const { data, error } = await supa.from('geladeiras').select('*, condominios(nome)').order('nome')
     if (error) throw error
     res.json({ geladeiras: data })
@@ -265,8 +261,7 @@ app.get('/admin/geladeiras', async (req, res) => {
 // GET /admin/condominios
 app.get('/admin/condominios', async (req, res) => {
   try {
-    const { createClient } = require('@supabase/supabase-js')
-    const supa = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY)
+    const supa = getSupa()
     const { data, error } = await supa.from('condominios').select('*').order('nome')
     if (error) throw error
     res.json({ condominios: data })
@@ -276,8 +271,7 @@ app.get('/admin/condominios', async (req, res) => {
 // PATCH /admin/condominios/:id
 app.patch('/admin/condominios/:id', async (req, res) => {
   try {
-    const { createClient } = require('@supabase/supabase-js')
-    const supa = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY)
+    const supa = getSupa()
     const { data, error } = await supa.from('condominios').update(req.body).eq('id', req.params.id).select().single()
     if (error) throw error
     res.json({ condominio: data })
@@ -298,8 +292,7 @@ app.post('/esp32/heartbeat', async (req, res) => {
     if (!geladeira || !ip) return
     const sb = require('./db')
     // atualiza IP direto no banco via supabase
-    const { createClient } = require('@supabase/supabase-js')
-    const supa = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY)
+    const supa = getSupa()
     await supa.from('geladeiras').update({ esp32_ip: ip }).ilike('nome', '%' + geladeira + '%')
     console.log('ESP32 heartbeat:', geladeira, 'IP:', ip, evento)
   } catch (err) {
