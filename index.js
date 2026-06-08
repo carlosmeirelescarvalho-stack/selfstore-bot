@@ -225,6 +225,62 @@ app.get('/admin/stats', async (req, res) => {
     })
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
+
+// GET /admin/logs
+app.get('/admin/logs', async (req, res) => {
+  try {
+    const { tipo, resultado, limit = 50 } = req.query
+    const { createClient } = require('@supabase/supabase-js')
+    const supa = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY)
+    let q = supa.from('logs_acesso')
+      .select('*, moradores(nome), geladeiras(nome)')
+      .order('criado_em', { ascending: false })
+      .limit(parseInt(limit))
+    if (tipo) q = q.eq('tipo', tipo)
+    if (resultado) q = q.eq('resultado', resultado)
+    const { data, error } = await q
+    if (error) throw error
+    res.json({ logs: data })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+// GET /admin/geladeiras
+app.get('/admin/geladeiras', async (req, res) => {
+  try {
+    const { createClient } = require('@supabase/supabase-js')
+    const supa = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY)
+    const { data, error } = await supa.from('geladeiras').select('*, condominios(nome)').order('nome')
+    if (error) throw error
+    res.json({ geladeiras: data })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+// GET /admin/condominios
+app.get('/admin/condominios', async (req, res) => {
+  try {
+    const { createClient } = require('@supabase/supabase-js')
+    const supa = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY)
+    const { data, error } = await supa.from('condominios').select('*').order('nome')
+    if (error) throw error
+    res.json({ condominios: data })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+// PATCH /admin/condominios/:id
+app.patch('/admin/condominios/:id', async (req, res) => {
+  try {
+    const { createClient } = require('@supabase/supabase-js')
+    const supa = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY)
+    const { data, error } = await supa.from('condominios').update(req.body).eq('id', req.params.id).select().single()
+    if (error) throw error
+    res.json({ condominio: data })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+// GET /painel — serve o painel admin
+app.get('/painel', (req, res) => {
+  res.sendFile(__dirname + '/painel.html')
+})
 // ESP32 heartbeat — atualiza IP automaticamente no banco
 app.post('/esp32/heartbeat', async (req, res) => {
   res.sendStatus(200)
