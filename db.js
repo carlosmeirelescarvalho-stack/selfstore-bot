@@ -1,16 +1,15 @@
 // services/db.js — todas as operações com o banco Supabase
 
 const { createClient } = require('@supabase/supabase-js')
-const ws = require('ws')
 const config = require('./config')
 
+// Inicialização lazy — só cria o cliente quando a primeira função for chamada
+// Garante que as variáveis de ambiente já foram carregadas pelo Railway
 let _supabase = null
 function supabase() {
   if (!_supabase) {
     if (!config.SUPABASE_URL) throw new Error('SUPABASE_URL não definida nas variáveis de ambiente')
-    _supabase = createClient(config.SUPABASE_URL, config.SUPABASE_KEY, {
-      realtime: { transport: ws }
-    })
+    _supabase = createClient(config.SUPABASE_URL, config.SUPABASE_KEY)
   }
   return _supabase
 }
@@ -195,3 +194,79 @@ module.exports = {
   registrarLog,
   uploadFoto,
 }
+
+// ─── ADMINS WHATSAPP ──────────────────────────────────────────────
+
+async function listarAdmins() {
+  const { data, error } = await supabase()
+    .from('admins_whatsapp')
+    .select('*')
+    .eq('ativo', true)
+  if (error) throw error
+  return data || []
+}
+
+async function adicionarAdmin(celular, nome) {
+  const { error } = await supabase()
+    .from('admins_whatsapp')
+    .upsert([{ celular, nome, ativo: true }], { onConflict: 'celular' })
+  if (error) throw error
+}
+
+async function removerAdmin(celular) {
+  const { error } = await supabase()
+    .from('admins_whatsapp')
+    .update({ ativo: false })
+    .eq('celular', celular)
+  if (error) throw error
+}
+
+// ─── FUNÇÕES AUXILIARES PARA ADMIN ───────────────────────────────
+
+async function listarMoradoresPorStatus(status) {
+  const { data, error } = await supabase()
+    .from('moradores')
+    .select('*, condominios(nome)')
+    .eq('status', status)
+    .order('criado_em', { ascending: false })
+    .limit(20)
+  if (error) throw error
+  return data || []
+}
+
+async function contarPendentes() {
+  const { count, error } = await supabase()
+    .from('moradores')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'pendente')
+  if (error) return 0
+  return count || 0
+}
+
+async function buscarMoradorParaAcao(busca) {
+  const limpo = busca.replace(/\D/g, '')
+  // Tenta pelo celular primeiro
+  if (limpo.length >= 10) {
+    const porCelular = await buscarMoradorPorCelular(limpo.length === 11 ? `55${limpo}` : limpo)
+    if (porCelular) return porCelular
+  }
+  // Tenta pelo nome
+  const { data, error } = await supabase()
+    .from('moradores')
+    .select('*, condominios(*)')
+    .ilike('nome', `%${busca}%`)
+    .limit(1)
+    .single()
+  if (error && error.code !== 'PGRST116') return null
+  return data
+}
+
+// Adiciona às exports existentes
+Object.assign(module.exports, {
+  listarAdmins,
+  adicionarAdmin,
+  removerAdmin,
+  listarMoradoresPorStatus,
+  contarPendentes,
+  buscarMoradorParaAcao,
+})
