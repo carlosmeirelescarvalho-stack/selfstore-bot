@@ -12,7 +12,14 @@ const { enviarTexto, MSG } = require('./whatsapp')
 const db = require('./db')
 
 const app = express()
-app.use(express.json({ limit: '20mb' })) // imagens chegam em base64
+app.use(express.json({ limit: '20mb' }))
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*')
+  res.header('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS')
+  res.header('Access-Control-Allow-Headers', 'Content-Type,X-ESP32-Secret')
+  if (req.method === 'OPTIONS') return res.sendStatus(200)
+  next()
+}) // imagens chegam em base64
 
 // ─── WEBHOOK — recebe mensagens do WhatsApp via Evolution API ─────
 app.post('/webhook', async (req, res) => {
