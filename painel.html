@@ -1,0 +1,901 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SelfStore — Painel Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#F4F2EC;--card:#FFFFFF;--border:#E0DDD4;--text:#1C1B18;
+  --muted:#6B6960;--accent:#0F6E56;--accent-l:#E3F2EC;--accent-m:#1D9E75;
+  --warn-bg:#FEF3E2;--warn:#854F0B;--danger-bg:#FDECEA;--danger:#A32D2D;
+  --success-bg:#E8F5EE;--success:#1E6B3A;--info-bg:#E6F1FB;--info:#185FA5;
+  --r:10px;--shadow:0 1px 3px rgba(0,0,0,.05),0 4px 16px rgba(0,0,0,.04)
+}
+body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);font-size:14px;min-height:100vh}
+.layout{display:flex;min-height:100vh}
+
+/* SIDEBAR */
+.sidebar{width:220px;background:var(--card);border-right:1px solid var(--border);
+  display:flex;flex-direction:column;position:sticky;top:0;height:100vh;overflow-y:auto;flex-shrink:0}
+.logo-wrap{padding:20px 16px 16px;border-bottom:1px solid var(--border)}
+.logo-mark{width:36px;height:36px;background:var(--accent);border-radius:8px;
+  display:flex;align-items:center;justify-content:center;color:#fff;font-size:18px;margin-bottom:10px}
+.logo-name{font-size:15px;font-weight:600;color:var(--text)}
+.logo-sub{font-size:11px;color:var(--muted);margin-top:1px}
+.nav{padding:10px 0;flex:1}
+.nav-section{font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.06em;
+  color:var(--muted);padding:10px 16px 4px}
+.nav-item{display:flex;align-items:center;gap:9px;padding:8px 16px;
+  color:var(--muted);font-size:13px;cursor:pointer;border-left:2px solid transparent;
+  transition:all .15s;text-decoration:none}
+.nav-item:hover{background:var(--bg);color:var(--text)}
+.nav-item.active{color:var(--accent);background:var(--accent-l);border-left-color:var(--accent);font-weight:500}
+.nav-item i{font-size:17px}
+.nav-badge{margin-left:auto;background:var(--warn-bg);color:var(--warn);
+  font-size:10px;font-weight:600;padding:1px 6px;border-radius:99px}
+.sidebar-footer{padding:12px 16px;border-top:1px solid var(--border)}
+.user-row{display:flex;align-items:center;gap:8px}
+.user-avatar{width:30px;height:30px;border-radius:50%;background:var(--accent-l);
+  display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:12px;font-weight:600}
+.user-name{font-size:12px;font-weight:500}
+.user-role{font-size:10px;color:var(--muted)}
+
+/* MAIN */
+.main{flex:1;overflow-x:hidden;min-width:0}
+.topbar{background:var(--card);border-bottom:1px solid var(--border);
+  padding:12px 24px;display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:10}
+.topbar-title{font-size:15px;font-weight:600;flex:1}
+.topbar-search{display:flex;align-items:center;gap:8px;background:var(--bg);
+  border:1px solid var(--border);border-radius:var(--r);padding:7px 12px;width:240px}
+.topbar-search input{background:none;border:none;outline:none;font-family:inherit;
+  font-size:13px;color:var(--text);width:100%}
+.topbar-search input::placeholder{color:var(--muted)}
+.content{padding:20px 24px}
+.page{display:none}
+.page.active{display:block}
+
+/* CARDS */
+.card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);
+  box-shadow:var(--shadow);margin-bottom:16px}
+.card-header{padding:14px 16px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between}
+.card-title{font-size:12px;font-weight:500;text-transform:uppercase;
+  letter-spacing:.05em;color:var(--muted)}
+.card-body{padding:16px}
+
+/* METRICS */
+.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:12px;margin-bottom:20px}
+.metric{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:16px;box-shadow:var(--shadow)}
+.metric-label{font-size:11px;color:var(--muted);margin-bottom:8px}
+.metric-value{font-size:26px;font-weight:600;line-height:1}
+.metric-sub{font-size:11px;color:var(--muted);margin-top:4px}
+.green{color:var(--accent)}
+.amber{color:var(--warn)}
+.red{color:var(--danger)}
+.blue{color:var(--info)}
+
+/* BADGES */
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:99px;font-size:11px;font-weight:500}
+.badge-pending{background:var(--warn-bg);color:var(--warn)}
+.badge-approved{background:var(--success-bg);color:var(--success)}
+.badge-rejected{background:var(--danger-bg);color:var(--danger)}
+
+/* BUTTONS */
+btn,button{font-family:inherit;cursor:pointer;font-size:12px;border:none;transition:all .15s}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:7px 14px;
+  border-radius:var(--r);font-size:13px;font-weight:500;cursor:pointer;border:none;font-family:inherit}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{background:var(--accent-m)}
+.btn-secondary{background:var(--card);color:var(--text);border:1px solid var(--border)}
+.btn-secondary:hover{background:var(--bg)}
+.btn-success{background:var(--success-bg);color:var(--success)}
+.btn-danger{background:var(--danger-bg);color:var(--danger)}
+.btn-sm{padding:5px 10px;font-size:12px}
+
+/* TABLES */
+.table-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse}
+th{font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.05em;
+  color:var(--muted);padding:10px 12px;text-align:left;border-bottom:1px solid var(--border)}
+td{padding:11px 12px;font-size:13px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:var(--bg)}
+.td-name{font-weight:500}
+.td-meta{font-size:11px;color:var(--muted);margin-top:2px}
+.td-actions{display:flex;gap:6px}
+
+/* FORMS */
+.form-group{margin-bottom:14px}
+.form-label{display:block;font-size:12px;font-weight:500;color:var(--muted);margin-bottom:5px}
+.form-input,.form-select{width:100%;padding:9px 12px;border:1px solid var(--border);
+  border-radius:var(--r);font-family:inherit;font-size:13px;color:var(--text);
+  background:var(--bg);outline:none;transition:border-color .15s;appearance:none}
+.form-input:focus,.form-select:focus{border-color:var(--accent);background:#fff}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.form-hint{font-size:11px;color:var(--muted);margin-top:4px}
+
+/* PILLS */
+.pills{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.pill{padding:5px 12px;border-radius:99px;border:1px solid var(--border);
+  background:var(--card);font-size:12px;cursor:pointer;color:var(--muted);transition:all .15s;font-family:inherit}
+.pill.active,.pill:hover{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+/* AVATAR */
+.avatar{width:32px;height:32px;border-radius:50%;background:var(--accent-l);
+  display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;
+  color:var(--accent);flex-shrink:0}
+
+/* EMPTY */
+.empty{text-align:center;padding:40px 20px;color:var(--muted)}
+.empty i{font-size:36px;display:block;margin-bottom:10px;opacity:.4}
+
+/* ALERT */
+.alert{padding:10px 14px;border-radius:var(--r);font-size:13px;margin-bottom:12px;display:none}
+.alert.show{display:block}
+.alert-success{background:var(--success-bg);color:var(--success)}
+.alert-error{background:var(--danger-bg);color:var(--danger)}
+
+/* TOGGLE */
+.toggle-row{display:flex;justify-content:space-between;align-items:center;
+  padding:12px 0;border-bottom:1px solid var(--border)}
+.toggle-row:last-child{border-bottom:none}
+.toggle{position:relative;width:38px;height:21px;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0;position:absolute}
+.slider{position:absolute;inset:0;background:var(--border);border-radius:99px;
+  cursor:pointer;transition:.2s}
+.slider:before{content:'';position:absolute;width:15px;height:15px;
+  left:3px;top:3px;background:#fff;border-radius:50%;transition:.2s}
+.toggle input:checked+.slider{background:var(--accent)}
+.toggle input:checked+.slider:before{transform:translateX(17px)}
+
+/* LOADING */
+.loading{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;padding:20px}
+.spinner{width:18px;height:18px;border:2px solid var(--border);
+  border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* MODAL */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);
+  z-index:100;display:none;align-items:center;justify-content:center;padding:20px}
+.modal-overlay.open{display:flex}
+.modal{background:var(--card);border-radius:14px;width:100%;max-width:480px;
+  box-shadow:0 20px 60px rgba(0,0,0,.2);overflow:hidden}
+.modal-header{padding:16px 20px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between}
+.modal-title{font-size:15px;font-weight:600}
+.modal-close{background:none;border:none;cursor:pointer;color:var(--muted);font-size:20px;
+  display:flex;align-items:center;padding:2px}
+.modal-body{padding:20px}
+.modal-footer{padding:14px 20px;border-top:1px solid var(--border);
+  display:flex;justify-content:flex-end;gap:8px}
+
+/* UPLOAD */
+.upload-zone{border:2px dashed var(--border);border-radius:var(--r);
+  padding:32px;text-align:center;cursor:pointer;transition:all .15s}
+.upload-zone:hover,.upload-zone.drag{border-color:var(--accent);background:var(--accent-l)}
+.upload-zone i{font-size:32px;color:var(--muted);margin-bottom:8px;display:block}
+.upload-zone p{font-size:13px;color:var(--muted)}
+
+/* LOGIN */
+#login-screen{position:fixed;inset:0;background:var(--bg);
+  display:flex;align-items:center;justify-content:center;z-index:200}
+.login-box{background:var(--card);border:1px solid var(--border);border-radius:14px;
+  padding:32px;width:100%;max-width:360px;box-shadow:var(--shadow)}
+.login-logo{width:48px;height:48px;background:var(--accent);border-radius:12px;
+  display:flex;align-items:center;justify-content:center;color:#fff;
+  font-size:22px;margin:0 auto 20px}
+.login-title{font-size:20px;font-weight:600;text-align:center;margin-bottom:4px}
+.login-sub{font-size:13px;color:var(--muted);text-align:center;margin-bottom:24px}
+
+/* IMPORT PREVIEW */
+.preview-row{display:flex;align-items:center;gap:8px;padding:8px 0;
+  border-bottom:1px solid var(--border);font-size:12px}
+.preview-row:last-child{border-bottom:none}
+.preview-ok{color:var(--success)}
+.preview-err{color:var(--danger)}
+
+@media(max-width:640px){
+  .sidebar{position:fixed;left:-220px;z-index:50;transition:left .2s;height:100vh}
+  .sidebar.open{left:0}
+  .main{margin-left:0}
+  .form-row{grid-template-columns:1fr}
+  .topbar-search{display:none}
+  .metrics{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div id="login-screen">
+  <div class="login-box">
+    <div class="login-logo"><i class="ti ti-lock"></i></div>
+    <div class="login-title">Painel Admin</div>
+    <div class="login-sub">SelfStore — acesso exclusivo</div>
+    <div id="login-alert" class="alert"></div>
+    <div class="form-group">
+      <label class="form-label">E-mail</label>
+      <input class="form-input" id="login-email" type="email" placeholder="admin@selfstore.com" autofocus>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Senha</label>
+      <input class="form-input" id="login-senha" type="password" placeholder="Sua senha" onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="doLogin()">
+      Entrar
+    </button>
+  </div>
+</div>
+
+<!-- APP -->
+<div class="layout" id="app" style="display:none">
+
+<!-- SIDEBAR -->
+<nav class="sidebar" id="sidebar">
+  <div class="logo-wrap">
+    <div class="logo-mark"><i class="ti ti-shopping-cart"></i></div>
+    <div class="logo-name">SelfStore</div>
+    <div class="logo-sub">Painel administrativo</div>
+  </div>
+  <div class="nav">
+    <div class="nav-section">Principal</div>
+    <a class="nav-item active" onclick="nav('dashboard',this)">
+      <i class="ti ti-layout-dashboard"></i>Dashboard
+    </a>
+    <a class="nav-item" onclick="nav('moradores',this)">
+      <i class="ti ti-users"></i>Moradores
+      <span class="nav-badge" id="badge-pendentes" style="display:none">0</span>
+    </a>
+    <a class="nav-item" onclick="nav('logs',this)">
+      <i class="ti ti-list"></i>Logs de acesso
+    </a>
+    <div class="nav-section">Configuração</div>
+    <a class="nav-item" onclick="nav('geladeiras',this)">
+      <i class="ti ti-device-fridge"></i>Geladeiras
+    </a>
+    <a class="nav-item" onclick="nav('condominios',this)">
+      <i class="ti ti-building"></i>Condomínios
+    </a>
+    <a class="nav-item" onclick="nav('admins',this)">
+      <i class="ti ti-shield"></i>Admins WhatsApp
+    </a>
+  </div>
+  <div class="sidebar-footer">
+    <div class="user-row">
+      <div class="user-avatar">A</div>
+      <div>
+        <div class="user-name">Admin</div>
+        <div class="user-role">Administrador</div>
+      </div>
+      <button style="margin-left:auto;background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px" onclick="logout()" title="Sair">
+        <i class="ti ti-logout"></i>
+      </button>
+    </div>
+  </div>
+</nav>
+
+<!-- MAIN -->
+<div class="main">
+  <div class="topbar">
+    <button style="display:none;background:none;border:none;cursor:pointer;font-size:20px;color:var(--muted)" id="menu-btn" onclick="document.getElementById('sidebar').classList.toggle('open')">
+      <i class="ti ti-menu-2"></i>
+    </button>
+    <div class="topbar-title" id="topbar-title">Dashboard</div>
+    <div class="topbar-search">
+      <i class="ti ti-search" style="color:var(--muted);font-size:15px"></i>
+      <input type="text" placeholder="Buscar morador..." id="global-search" oninput="globalSearch(this.value)">
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- DASHBOARD -->
+    <div class="page active" id="page-dashboard">
+      <div class="metrics" id="metrics-grid">
+        <div class="loading"><div class="spinner"></div>Carregando...</div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Pendentes de aprovação</span>
+          <button class="btn btn-sm btn-secondary" onclick="nav('moradores', document.querySelector('.nav-item:nth-child(2)'))">Ver todos</button>
+        </div>
+        <div class="card-body" id="pending-list">
+          <div class="loading"><div class="spinner"></div>Carregando...</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><span class="card-title">Últimos acessos</span></div>
+        <div class="card-body" id="recent-logs">
+          <div class="loading"><div class="spinner"></div>Carregando...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MORADORES -->
+    <div class="page" id="page-moradores">
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="abrirModalCadastro()">
+          <i class="ti ti-plus"></i>Novo morador
+        </button>
+        <button class="btn btn-secondary" onclick="abrirModalImport()">
+          <i class="ti ti-file-spreadsheet"></i>Importar Excel
+        </button>
+      </div>
+      <div class="pills" id="filtro-status">
+        <button class="pill active" onclick="setFiltro('todos',this)">Todos</button>
+        <button class="pill" onclick="setFiltro('pendente',this)">Pendentes</button>
+        <button class="pill" onclick="setFiltro('aprovado',this)">Aprovados</button>
+        <button class="pill" onclick="setFiltro('rejeitado',this)">Rejeitados</button>
+      </div>
+      <div class="card">
+        <div class="card-body" id="moradores-lista">
+          <div class="loading"><div class="spinner"></div>Carregando...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LOGS -->
+    <div class="page" id="page-logs">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Histórico de acessos</span>
+          <div style="display:flex;gap:8px">
+            <select class="form-select" style="width:auto;padding:5px 10px;font-size:12px" onchange="carregarLogs()" id="filtro-tipo">
+              <option value="">Todos os tipos</option>
+              <option value="whatsapp">WhatsApp</option>
+              <option value="facial">Facial</option>
+            </select>
+            <select class="form-select" style="width:auto;padding:5px 10px;font-size:12px" onchange="carregarLogs()" id="filtro-resultado">
+              <option value="">Todos</option>
+              <option value="aberto">Abertos</option>
+              <option value="negado">Negados</option>
+            </select>
+          </div>
+        </div>
+        <div class="card-body" id="logs-lista">
+          <div class="loading"><div class="spinner"></div>Carregando...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- GELADEIRAS -->
+    <div class="page" id="page-geladeiras">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Geladeiras cadastradas</span></div>
+        <div class="card-body" id="geladeiras-lista">
+          <div class="loading"><div class="spinner"></div>Carregando...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONDOMINIOS -->
+    <div class="page" id="page-condominios">
+      <div class="card">
+        <div class="card-header"><span class="card-title">Condomínios</span></div>
+        <div class="card-body" id="condominios-lista">
+          <div class="loading"><div class="spinner"></div>Carregando...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ADMINS -->
+    <div class="page" id="page-admins">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Admins WhatsApp</span>
+          <button class="btn btn-sm btn-primary" onclick="abrirModalAdmin()"><i class="ti ti-plus"></i>Adicionar</button>
+        </div>
+        <div class="card-body" id="admins-lista">
+          <div class="loading"><div class="spinner"></div>Carregando...</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<!-- MODAL: CADASTRO MORADOR -->
+<div class="modal-overlay" id="modal-cadastro">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Novo morador</div>
+      <button class="modal-close" onclick="fecharModal('modal-cadastro')"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <div id="cad-alert" class="alert"></div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Nome completo *</label>
+          <input class="form-input" id="cad-nome" type="text" placeholder="Nome completo">
+        </div>
+        <div class="form-group">
+          <label class="form-label">CPF *</label>
+          <input class="form-input" id="cad-cpf" type="text" placeholder="000.000.000-00" oninput="fmtCPF(this)">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Data de nascimento *</label>
+          <input class="form-input" id="cad-nasc" type="text" placeholder="DD/MM/AAAA">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Celular (WhatsApp) *</label>
+          <input class="form-input" id="cad-cel" type="text" placeholder="11 99999-9999">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Condomínio *</label>
+        <select class="form-select" id="cad-cond"></select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Bloco *</label>
+          <input class="form-input" id="cad-bloco" type="text" placeholder="Ex: Bloco A">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Unidade *</label>
+          <input class="form-input" id="cad-unidade" type="text" placeholder="Ex: 101">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="fecharModal('modal-cadastro')">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarMorador()"><i class="ti ti-check"></i>Cadastrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: IMPORTAR EXCEL -->
+<div class="modal-overlay" id="modal-import">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Importar planilha Excel</div>
+      <button class="modal-close" onclick="fecharModal('modal-import')"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <div id="import-step-1">
+        <div class="form-group">
+          <label class="form-label">Condomínio</label>
+          <select class="form-select" id="import-cond"></select>
+        </div>
+        <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()"
+          ondragover="event.preventDefault();this.classList.add('drag')"
+          ondragleave="this.classList.remove('drag')"
+          ondrop="handleDrop(event)">
+          <i class="ti ti-file-spreadsheet"></i>
+          <p><strong>Clique ou arraste</strong> o arquivo .xlsx aqui</p>
+          <p style="margin-top:4px;font-size:11px">Colunas: nome, cpf, data_nasc, telefone, bloco, unidade</p>
+        </div>
+        <input type="file" id="file-input" accept=".xlsx" style="display:none" onchange="handleFile(this.files[0])">
+      </div>
+      <div id="import-step-2" style="display:none">
+        <div id="import-alert" class="alert show"></div>
+        <div id="import-preview" style="max-height:300px;overflow-y:auto"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="fecharModal('modal-import')">Cancelar</button>
+      <button class="btn btn-primary" id="btn-confirmar-import" style="display:none" onclick="confirmarImport()">
+        <i class="ti ti-check"></i>Confirmar importação
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: ADMIN WHATSAPP -->
+<div class="modal-overlay" id="modal-admin">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Adicionar admin WhatsApp</div>
+      <button class="modal-close" onclick="fecharModal('modal-admin')"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Nome</label>
+        <input class="form-input" id="admin-nome" type="text" placeholder="Nome do admin">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Celular (com DDD, sem +55)</label>
+        <input class="form-input" id="admin-cel" type="text" placeholder="11 99999-9999">
+        <div class="form-hint">O sistema normaliza automaticamente para o formato correto</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="fecharModal('modal-admin')">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarAdmin()"><i class="ti ti-check"></i>Adicionar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── CONFIG ─────────────────────────────────────────────────────────
+const API = window.location.origin
+
+// ── AUTH ──────────────────────────────────────────────────────────
+const ADMIN_EMAIL = 'admin@selfstore.com'
+const ADMIN_SENHA = 'selfstore2025'
+
+let filtroAtual = 'todos'
+let importFile = null
+let condominiosCache = []
+
+function doLogin() {
+  const email = document.getElementById('login-email').value.trim()
+  const senha = document.getElementById('login-senha').value
+  const a = document.getElementById('login-alert')
+  if(email !== ADMIN_EMAIL || senha !== ADMIN_SENHA) {
+    a.className = 'alert alert-error show'
+    a.textContent = 'E-mail ou senha incorretos.'
+    return
+  }
+  document.getElementById('login-screen').style.display = 'none'
+  document.getElementById('app').style.display = 'flex'
+  init()
+}
+
+function logout() {
+  document.getElementById('login-screen').style.display = 'flex'
+  document.getElementById('app').style.display = 'none'
+}
+
+// ── INIT ──────────────────────────────────────────────────────────
+async function init() {
+  await carregarCondominios()
+  carregarDashboard()
+}
+
+// ── NAVEGAÇÃO ─────────────────────────────────────────────────────
+function nav(page, el) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'))
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'))
+  document.getElementById('page-' + page).classList.add('active')
+  if(el) el.classList.add('active')
+  document.getElementById('topbar-title').textContent = {
+    dashboard:'Dashboard', moradores:'Moradores', logs:'Logs de acesso',
+    geladeiras:'Geladeiras', condominios:'Condomínios', admins:'Admins WhatsApp'
+  }[page] || page
+  if(page==='moradores') carregarMoradores()
+  if(page==='logs') carregarLogs()
+  if(page==='geladeiras') carregarGeladeiras()
+  if(page==='condominios') carregarCondominios2()
+  if(page==='admins') carregarAdmins()
+  document.getElementById('sidebar').classList.remove('open')
+}
+
+// ── FETCH HELPER ──────────────────────────────────────────────────
+async function api(path, opts={}) {
+  const res = await fetch(API + path, {
+    headers:{'Content-Type':'application/json'}, ...opts
+  })
+  return res.json()
+}
+
+// ── DASHBOARD ─────────────────────────────────────────────────────
+async function carregarDashboard() {
+  // Stats
+  const stats = await api('/admin/stats').catch(()=>({total:0,pendentes:0,aprovados:0,acessos_hoje:0}))
+  document.getElementById('metrics-grid').innerHTML = `
+    <div class="metric"><div class="metric-label">Total moradores</div>
+      <div class="metric-value">${stats.total}</div></div>
+    <div class="metric"><div class="metric-label">Pendentes</div>
+      <div class="metric-value amber">${stats.pendentes}</div></div>
+    <div class="metric"><div class="metric-label">Aprovados</div>
+      <div class="metric-value green">${stats.aprovados}</div></div>
+    <div class="metric"><div class="metric-label">Acessos hoje</div>
+      <div class="metric-value blue">${stats.acessos_hoje}</div></div>
+  `
+  if(stats.pendentes > 0) {
+    const b = document.getElementById('badge-pendentes')
+    b.textContent = stats.pendentes; b.style.display = 'block'
+  }
+  // Pendentes
+  const { moradores } = await api('/admin/moradores?status=pendente&limit=5').catch(()=>({moradores:[]}))
+  const pl = document.getElementById('pending-list')
+  if(!moradores || moradores.length===0) {
+    pl.innerHTML='<div class="empty"><i class="ti ti-check"></i><p>Nenhum cadastro pendente</p></div>'; return
+  }
+  pl.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>Morador</th><th>Condomínio</th><th>Ações</th></tr></thead>
+    <tbody>${moradores.map(m => `
+      <tr>
+        <td><div style="display:flex;align-items:center;gap:8px">
+          <div class="avatar">${iniciais(m.nome)}</div>
+          <div><div class="td-name">${m.nome}</div>
+          <div class="td-meta">${m.bloco} • Apto ${m.unidade}</div></div>
+        </div></td>
+        <td>${m.condominios?.nome||'—'}</td>
+        <td><div class="td-actions">
+          <button class="btn btn-sm btn-success" onclick="aprovar('${m.id}','${m.nome}')">Aprovar</button>
+          <button class="btn btn-sm btn-danger" onclick="rejeitar('${m.id}')">Rejeitar</button>
+        </div></td>
+      </tr>`).join('')}
+    </tbody></table></div>`
+  // Logs recentes
+  const { logs } = await api('/admin/logs?limit=5').catch(()=>({logs:[]}))
+  const ll = document.getElementById('recent-logs')
+  if(!logs || logs.length===0) {
+    ll.innerHTML='<div class="empty"><i class="ti ti-list"></i><p>Sem acessos registrados</p></div>'; return
+  }
+  ll.innerHTML = logs.map(l => `
+    <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
+      <div style="width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+        background:${l.resultado==='aberto'?'var(--success-bg)':'var(--danger-bg)'}">
+        <i class="ti ti-${l.resultado==='aberto'?'check':'x'}" style="color:${l.resultado==='aberto'?'var(--success)':'var(--danger)'};font-size:13px"></i>
+      </div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:500">${l.moradores?.nome||'Desconhecido'}</div>
+        <div style="font-size:11px;color:var(--muted)">${l.tipo} · ${l.geladeiras?.nome||'Porta de entrada'}</div>
+      </div>
+      <div style="font-size:11px;color:var(--muted)">${fmtData(l.criado_em)}</div>
+    </div>`).join('')
+}
+
+// ── MORADORES ─────────────────────────────────────────────────────
+async function carregarMoradores(busca='') {
+  const params = new URLSearchParams({limit:'50'})
+  if(filtroAtual!=='todos') params.set('status', filtroAtual)
+  if(busca) params.set('busca', busca)
+  const { moradores, total } = await api('/admin/moradores?'+params).catch(()=>({moradores:[],total:0}))
+  const el = document.getElementById('moradores-lista')
+  if(!moradores || moradores.length===0) {
+    el.innerHTML='<div class="empty"><i class="ti ti-users"></i><p>Nenhum morador encontrado</p></div>'; return
+  }
+  el.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>Morador</th><th>Unidade</th><th>Status</th><th>Ações</th></tr></thead>
+    <tbody>${moradores.map(m => `
+      <tr>
+        <td><div style="display:flex;align-items:center;gap:8px">
+          <div class="avatar">${iniciais(m.nome)}</div>
+          <div><div class="td-name">${m.nome}</div>
+          <div class="td-meta">CPF: ${fmtCPFstr(m.cpf)}</div></div>
+        </div></td>
+        <td><div>${m.condominios?.nome||'—'}</div>
+          <div class="td-meta">${m.bloco} • Apto ${m.unidade}</div></td>
+        <td><span class="badge badge-${m.status}">${{pendente:'Pendente',aprovado:'Aprovado',rejeitado:'Rejeitado'}[m.status]}</span></td>
+        <td><div class="td-actions">
+          ${m.status!=='aprovado'?`<button class="btn btn-sm btn-success" onclick="aprovar('${m.id}','${m.nome}')"><i class="ti ti-check"></i></button>`:''}
+          ${m.status!=='rejeitado'?`<button class="btn btn-sm btn-danger" onclick="rejeitar('${m.id}')"><i class="ti ti-x"></i></button>`:''}
+          ${m.status==='aprovado'?`<button class="btn btn-sm btn-secondary" onclick="bloquear('${m.id}')"><i class="ti ti-ban"></i></button>`:''}
+        </div></td>
+      </tr>`).join('')}
+    </tbody></table></div>`
+}
+
+function setFiltro(f, el) {
+  filtroAtual = f
+  document.querySelectorAll('#filtro-status .pill').forEach(p=>p.classList.remove('active'))
+  el.classList.add('active')
+  carregarMoradores()
+}
+
+function globalSearch(v) {
+  if(document.getElementById('page-moradores').classList.contains('active')) carregarMoradores(v)
+}
+
+async function aprovar(id, nome) {
+  if(!confirm(`Aprovar ${nome}?`)) return
+  await api(`/admin/moradores/${id}`, {method:'PATCH', body:JSON.stringify({status:'aprovado'})})
+  notif('Morador aprovado!')
+  carregarDashboard(); carregarMoradores()
+}
+async function rejeitar(id) {
+  if(!confirm('Rejeitar este morador?')) return
+  await api(`/admin/moradores/${id}`, {method:'PATCH', body:JSON.stringify({status:'rejeitado'})})
+  notif('Morador rejeitado.')
+  carregarDashboard(); carregarMoradores()
+}
+async function bloquear(id) {
+  if(!confirm('Bloquear acesso deste morador?')) return
+  await api(`/admin/moradores/${id}`, {method:'PATCH', body:JSON.stringify({status:'rejeitado'})})
+  notif('Morador bloqueado.')
+  carregarMoradores()
+}
+
+// ── CADASTRO MANUAL ───────────────────────────────────────────────
+function abrirModalCadastro() {
+  const sel = document.getElementById('cad-cond')
+  sel.innerHTML = condominiosCache.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('')
+  document.getElementById('modal-cadastro').classList.add('open')
+}
+async function salvarMorador() {
+  const dados = {
+    nome: document.getElementById('cad-nome').value.trim(),
+    cpf: document.getElementById('cad-cpf').value,
+    data_nasc: document.getElementById('cad-nasc').value,
+    celular: document.getElementById('cad-cel').value,
+    condominio_id: document.getElementById('cad-cond').value,
+    bloco: document.getElementById('cad-bloco').value.trim(),
+    unidade: document.getElementById('cad-unidade').value.trim(),
+  }
+  const res = await api('/admin/moradores', {method:'POST', body:JSON.stringify(dados)})
+  const a = document.getElementById('cad-alert')
+  if(res.erro) { a.className='alert alert-error show'; a.textContent=res.erro; return }
+  fecharModal('modal-cadastro')
+  notif('Morador cadastrado com sucesso!')
+  carregarMoradores()
+}
+
+// ── IMPORTAÇÃO EXCEL ──────────────────────────────────────────────
+function abrirModalImport() {
+  document.getElementById('import-cond').innerHTML = condominiosCache.map(c=>`<option value="${c.id}">${c.nome}</option>`).join('')
+  document.getElementById('import-step-1').style.display='block'
+  document.getElementById('import-step-2').style.display='none'
+  document.getElementById('btn-confirmar-import').style.display='none'
+  importFile = null
+  document.getElementById('modal-import').classList.add('open')
+}
+function handleDrop(e) {
+  e.preventDefault(); document.getElementById('upload-zone').classList.remove('drag')
+  handleFile(e.dataTransfer.files[0])
+}
+async function handleFile(file) {
+  if(!file || !file.name.endsWith('.xlsx')) { alert('Envie um arquivo .xlsx'); return }
+  importFile = file
+  const fd = new FormData()
+  fd.append('planilha', file)
+  fd.append('condominio_id', document.getElementById('import-cond').value)
+  const res = await fetch(API+'/admin/importar/preview', {method:'POST', body:fd}).then(r=>r.json())
+  document.getElementById('import-step-1').style.display='none'
+  document.getElementById('import-step-2').style.display='block'
+  const a = document.getElementById('import-alert')
+  a.className = `alert ${res.invalidas>0?'alert-error':'alert-success'} show`
+  a.textContent = `${res.total} linhas encontradas — ${res.validas} válidas, ${res.invalidas} com erro`
+  document.getElementById('import-preview').innerHTML = res.linhas.map(l=>`
+    <div class="preview-row">
+      <i class="ti ti-${l.valida?'check preview-ok':'x preview-err'}" style="color:${l.valida?'var(--success)':'var(--danger)'}"></i>
+      <span style="flex:1">${l.nome} — ${l.bloco} ${l.unidade}</span>
+      ${l.erros.length?`<span style="color:var(--danger);font-size:11px">${l.erros.join(', ')}</span>`:''}
+    </div>`).join('')
+  if(res.validas>0) document.getElementById('btn-confirmar-import').style.display='flex'
+}
+async function confirmarImport() {
+  if(!importFile) return
+  const fd = new FormData()
+  fd.append('planilha', importFile)
+  fd.append('condominio_id', document.getElementById('import-cond').value)
+  const res = await fetch(API+'/admin/importar/confirmar', {method:'POST', body:fd}).then(r=>r.json())
+  fecharModal('modal-import')
+  notif(`${res.importados} moradores importados!`)
+  carregarMoradores()
+}
+
+// ── LOGS ─────────────────────────────────────────────────────────
+async function carregarLogs() {
+  const tipo = document.getElementById('filtro-tipo')?.value||''
+  const resultado = document.getElementById('filtro-resultado')?.value||''
+  const params = new URLSearchParams({limit:'50'})
+  if(tipo) params.set('tipo', tipo)
+  if(resultado) params.set('resultado', resultado)
+  const { logs } = await api('/admin/logs?'+params).catch(()=>({logs:[]}))
+  const el = document.getElementById('logs-lista')
+  if(!logs||logs.length===0) {
+    el.innerHTML='<div class="empty"><i class="ti ti-list"></i><p>Sem registros</p></div>'; return
+  }
+  el.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>Morador</th><th>Tipo</th><th>Local</th><th>Resultado</th><th>Horário</th></tr></thead>
+    <tbody>${logs.map(l=>`
+      <tr>
+        <td>${l.moradores?.nome||'Desconhecido'}</td>
+        <td>${l.tipo}</td>
+        <td>${l.geladeiras?.nome||'Porta entrada'}</td>
+        <td><span class="badge badge-${l.resultado==='aberto'?'approved':'rejected'}">${l.resultado}</span></td>
+        <td style="font-size:11px;color:var(--muted)">${fmtData(l.criado_em)}</td>
+      </tr>`).join('')}
+    </tbody></table></div>`
+}
+
+// ── GELADEIRAS ───────────────────────────────────────────────────
+async function carregarGeladeiras() {
+  const { geladeiras } = await api('/admin/geladeiras').catch(()=>({geladeiras:[]}))
+  const el = document.getElementById('geladeiras-lista')
+  if(!geladeiras||geladeiras.length===0) {
+    el.innerHTML='<div class="empty"><i class="ti ti-device-fridge"></i><p>Nenhuma geladeira</p></div>'; return
+  }
+  el.innerHTML = geladeiras.map(g=>`
+    <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
+      <div style="width:36px;height:36px;border-radius:8px;background:var(--accent-l);
+        display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:18px">
+        <i class="ti ti-device-fridge"></i>
+      </div>
+      <div style="flex:1">
+        <div style="font-weight:500;font-size:13px">${g.nome}</div>
+        <div style="font-size:11px;color:var(--muted);font-family:'DM Mono',monospace">${g.esp32_ip||'IP não configurado'} · ${g.flag_alcoolica?'alcóolica':'não alcoólica'}</div>
+      </div>
+      <span style="width:8px;height:8px;border-radius:50%;background:${g.esp32_ip?'var(--accent)':'var(--border)'}"></span>
+    </div>`).join('')
+}
+
+// ── CONDOMÍNIOS ──────────────────────────────────────────────────
+async function carregarCondominios() {
+  const data = await api('/admin/condominios').catch(()=>({condominios:[]}))
+  condominiosCache = data.condominios || []
+}
+async function carregarCondominios2() {
+  const el = document.getElementById('condominios-lista')
+  if(!condominiosCache.length) { el.innerHTML='<div class="empty"><p>Nenhum condomínio</p></div>'; return }
+  el.innerHTML = condominiosCache.map(c=>`
+    <div class="toggle-row">
+      <div>
+        <div style="font-weight:500">${c.nome}</div>
+        <div style="font-size:11px;color:var(--muted)">iDFace: ${c.idface_ip||'não configurado'}</div>
+      </div>
+      <label class="toggle">
+        <input type="checkbox" ${c.flag_auto_aprovacao?'checked':''} onchange="toggleAutoAprov('${c.id}',this.checked)">
+        <span class="slider"></span>
+      </label>
+    </div>`).join('')
+}
+async function toggleAutoAprov(id, val) {
+  await api(`/admin/condominios/${id}`, {method:'PATCH', body:JSON.stringify({flag_auto_aprovacao:val})})
+  notif(`Auto-aprovação ${val?'ativada':'desativada'}`)
+}
+
+// ── ADMINS ───────────────────────────────────────────────────────
+async function carregarAdmins() {
+  const { admins } = await api('/admin/admins').catch(()=>({admins:[]}))
+  const el = document.getElementById('admins-lista')
+  if(!admins||admins.length===0) {
+    el.innerHTML='<div class="empty"><i class="ti ti-shield"></i><p>Nenhum admin cadastrado</p></div>'; return
+  }
+  el.innerHTML = `<div class="table-wrap"><table>
+    <thead><tr><th>Nome</th><th>Celular</th><th>Ações</th></tr></thead>
+    <tbody>${admins.map(a=>`
+      <tr>
+        <td>${a.nome||'—'}</td>
+        <td style="font-family:'DM Mono',monospace;font-size:12px">${a.celular}</td>
+        <td><button class="btn btn-sm btn-danger" onclick="removerAdmin('${a.celular}')">Remover</button></td>
+      </tr>`).join('')}
+    </tbody></table></div>`
+}
+function abrirModalAdmin() { document.getElementById('modal-admin').classList.add('open') }
+async function salvarAdmin() {
+  const nome = document.getElementById('admin-nome').value.trim()
+  const cel = document.getElementById('admin-cel').value.trim()
+  if(!cel) { alert('Informe o celular'); return }
+  await api('/admin/admins', {method:'POST', body:JSON.stringify({celular:cel, nome})})
+  fecharModal('modal-admin')
+  notif('Admin adicionado!')
+  carregarAdmins()
+}
+async function removerAdmin(cel) {
+  if(!confirm('Remover este admin?')) return
+  await api(`/admin/admins/${encodeURIComponent(cel)}`, {method:'DELETE'})
+  notif('Admin removido.')
+  carregarAdmins()
+}
+
+// ── HELPERS ──────────────────────────────────────────────────────
+function iniciais(nome) { return nome?.split(' ').map(n=>n[0]).join('').substring(0,2).toUpperCase()||'?' }
+function fmtCPFstr(cpf) { return cpf?.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4')||cpf }
+function fmtCPF(el) { let v=el.value.replace(/\D/g,'').substring(0,11); v=v.replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d{1,2})$/,'$1-$2'); el.value=v }
+function fmtData(d) { if(!d) return '—'; const dt=new Date(d); return dt.toLocaleDateString('pt-BR')+' '+dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) }
+
+function fecharModal(id) { document.getElementById(id).classList.remove('open') }
+
+let notifTimer
+function notif(msg, tipo='success') {
+  clearTimeout(notifTimer)
+  const n = document.getElementById('notif-bar') || (() => {
+    const el = document.createElement('div')
+    el.id='notif-bar'
+    el.style.cssText='position:fixed;bottom:20px;right:20px;padding:12px 18px;border-radius:10px;font-size:13px;font-weight:500;z-index:999;transform:translateY(80px);opacity:0;transition:all .3s;box-shadow:0 4px 20px rgba(0,0,0,.15)'
+    document.body.appendChild(el); return el
+  })()
+  n.style.background = tipo==='success' ? 'var(--accent)' : 'var(--danger)'
+  n.style.color = '#fff'
+  n.textContent = msg
+  requestAnimationFrame(()=>{ n.style.transform='translateY(0)'; n.style.opacity='1' })
+  notifTimer = setTimeout(()=>{ n.style.transform='translateY(80px)'; n.style.opacity='0' }, 3000)
+}
+
+// mobile menu
+if(window.innerWidth<=640) document.getElementById('menu-btn').style.display='flex'
+</script>
+</body>
+</html>
