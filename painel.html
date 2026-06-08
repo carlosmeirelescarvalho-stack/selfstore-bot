@@ -579,7 +579,13 @@ async function api(path, opts={}) {
 // ── DASHBOARD ─────────────────────────────────────────────────────
 async function carregarDashboard() {
   // Stats
-  const stats = await api('/admin/stats').catch(()=>({total:0,pendentes:0,aprovados:0,acessos_hoje:0}))
+  const raw = await api('/admin/stats').catch(()=>({}))
+  const stats = {
+    total: raw.total ?? 0,
+    pendentes: raw.pendentes ?? 0,
+    aprovados: raw.aprovados ?? 0,
+    acessos_hoje: raw.acessos_hoje ?? 0,
+  }
   document.getElementById('metrics-grid').innerHTML = `
     <div class="metric"><div class="metric-label">Total moradores</div>
       <div class="metric-value">${stats.total}</div></div>
