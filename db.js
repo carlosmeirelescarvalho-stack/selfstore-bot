@@ -1,15 +1,16 @@
 // services/db.js — todas as operações com o banco Supabase
 
 const { createClient } = require('@supabase/supabase-js')
+const ws = require('ws')
 const config = require('./config')
 
-// Inicialização lazy — só cria o cliente quando a primeira função for chamada
-// Garante que as variáveis de ambiente já foram carregadas pelo Railway
 let _supabase = null
 function supabase() {
   if (!_supabase) {
-    if (!config.SUPABASE_URL) throw new Error('SUPABASE_URL não definida nas variáveis de ambiente')
-    _supabase = createClient(config.SUPABASE_URL, config.SUPABASE_KEY)
+    if (!config.SUPABASE_URL) throw new Error('SUPABASE_URL nao definida')
+    _supabase = createClient(config.SUPABASE_URL, config.SUPABASE_KEY, {
+      realtime: { transport: ws }
+    })
   }
   return _supabase
 }
