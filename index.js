@@ -2,7 +2,11 @@
 
 const express = require('express')
 const config = require('./config')
-const { handleCadastro } = require('./cadastro')
+const { handleCadastro, sincronizarComIDFace } = require('./cadastro')
+const { handleAdmin, isAdmin } = require('./admin-whatsapp')
+const { previewPlanilha, importarPlanilha, cadastrarManual } = require('./importacao')
+const multer = require('multer')
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } })
 const { handleGeladeira, isComandoGeladeira } = require('./geladeira')
 const { enviarTexto, MSG } = require('./whatsapp')
 const db = require('./db')
@@ -40,6 +44,18 @@ app.post('/webhook', async (req, res) => {
       : null
 
     // ── ROTEAMENTO ──────────────────────────────────────────────
+
+    // Verifica se é admin com sessão ativa ou digitou ADMIN
+    const adminAutorizado = await isAdmin(celular)
+    if (adminAutorizado) {
+      const sessaoAdmin = await db.buscarSessao('admin_' + celular)
+      const { isComandoAdmin } = require('./admin-whatsapp')
+      if (sessaoAdmin || isComandoAdmin(textoMensagem)) {
+        const resultado = await handleAdmin(celular, textoMensagem, tipoMensagem, imagemBase64)
+        if (resultado !== 'continuar') return
+        // Se retornou 'continuar', cai no fluxo normal de morador abaixo
+      }
+    }
 
     // Comando de abertura de geladeira (vem do QR Code)
     if (tipoMensagem === 'text' && isComandoGeladeira(textoMensagem)) {
@@ -108,6 +124,107 @@ app.post('/webhook/idface', async (req, res) => {
 // ─── HEALTH CHECK ─────────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok', ts: new Date() }))
 
+
+// ─── ENDPOINTS PAINEL ADMIN ───────────────────────────────────────
+
+// GET /admin/moradores — lista moradores com filtros
+app.get('/admin/moradores', async (req, res) => {
+  try {
+    const { status, busca, limit = 50, offset = 0 } = req.query
+    const { createClient } = require('@supabase/supabase-js')
+    const supa = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY)
+    let query = supa.from('moradores').select('*, condominios(nome)', { count: 'exact' })
+    if (status && status !== 'todos') query = query.eq('status', status)
+    if (busca) query = query.or(`nome.ilike.%${busca}%,cpf.ilike.%${busca}%,unidade.ilike.%${busca}%`)
+    query = query.order('criado_em', { ascending: false }).range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1)
+    const { data, error, count } = await query
+    if (error) throw error
+    res.json({ moradores: data, total: count })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+// PATCH /admin/moradores/:id — atualiza status
+app.patch('/admin/moradores/:id', async (req, res) => {
+  try {
+    const { status } = req.body
+    const morador = await db.atualizarStatusMorador(req.params.id, status)
+    res.json({ morador })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+// POST /admin/moradores — cadastro manual
+app.post('/admin/moradores', async (req, res) => {
+  try {
+    const resultado = await cadastrarManual(req.body)
+    if (resultado.erro) return res.status(400).json({ erro: resultado.erro })
+    res.json(resultado)
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+// POST /admin/importar/preview — preview da planilha
+app.post('/admin/importar/preview', upload.single('planilha'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ erro: 'Nenhum arquivo enviado' })
+    const { condominio_id } = req.body
+    const preview = await previewPlanilha(req.file.buffer, condominio_id)
+    res.json(preview)
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+// POST /admin/importar/confirmar — confirma importação
+app.post('/admin/importar/confirmar', upload.single('planilha'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ erro: 'Nenhum arquivo enviado' })
+    const { condominio_id } = req.body
+    const resultado = await importarPlanilha(req.file.buffer, condominio_id)
+    res.json(resultado)
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+// GET /admin/admins — lista admins whatsapp
+app.get('/admin/admins', async (req, res) => {
+  try {
+    const admins = await db.listarAdmins()
+    res.json({ admins })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+// POST /admin/admins — adiciona admin
+app.post('/admin/admins', async (req, res) => {
+  try {
+    const { celular, nome } = req.body
+    await db.adicionarAdmin(celular, nome)
+    res.json({ ok: true })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+// DELETE /admin/admins/:celular — remove admin
+app.delete('/admin/admins/:celular', async (req, res) => {
+  try {
+    await db.removerAdmin(req.params.celular)
+    res.json({ ok: true })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+// GET /admin/stats — estatísticas do dashboard
+app.get('/admin/stats', async (req, res) => {
+  try {
+    const { createClient } = require('@supabase/supabase-js')
+    const supa = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY)
+    const [total, pendentes, aprovados, logs] = await Promise.all([
+      supa.from('moradores').select('*', { count: 'exact', head: true }),
+      supa.from('moradores').select('*', { count: 'exact', head: true }).eq('status', 'pendente'),
+      supa.from('moradores').select('*', { count: 'exact', head: true }).eq('status', 'aprovado'),
+      supa.from('logs_acesso').select('*', { count: 'exact', head: true }).gte('criado_em', new Date(Date.now() - 86400000).toISOString()),
+    ])
+    res.json({
+      total: total.count || 0,
+      pendentes: pendentes.count || 0,
+      aprovados: aprovados.count || 0,
+      acessos_hoje: logs.count || 0,
+    })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
 // ESP32 heartbeat — atualiza IP automaticamente no banco
 app.post('/esp32/heartbeat', async (req, res) => {
   res.sendStatus(200)
