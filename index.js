@@ -69,43 +69,41 @@ app.post('/webhook', async (req, res) => {
       if (sessaoAdmin || isComandoAdmin(textoMensagem)) {
         const resultado = await handleAdmin(celular, textoMensagem, tipoMensagem, imagemBase64)
         if (resultado !== 'continuar') return
-        // Se retornou 'continuar', cai no fluxo normal de morador abaixo
       }
     }
 
-    // Comando de abertura de geladeira (vem do QR Code)
+    // ── PRIORIDADE 1: sessão de cadastro ativa — continua sempre ──
+    // Deve ser verificada ANTES de qualquer outro roteamento
+    // para evitar que respostas numéricas (1, 2, etc.) sejam
+    // interceptadas por outros handlers durante o fluxo de cadastro
+    const sessaoAtiva = await db.buscarSessao(celular)
+    if (sessaoAtiva || tipoMensagem === 'image') {
+      await handleCadastro(celular, textoMensagem, tipoMensagem, imagemBase64)
+      return
+    }
+
+    // ── PRIORIDADE 2: comando de abertura de geladeira (QR Code) ──
     if (tipoMensagem === 'text' && isComandoGeladeira(textoMensagem)) {
       await handleGeladeira(celular, textoMensagem)
       return
     }
 
-    // Palavras-chave para cadastro explícito
+    // ── PRIORIDADE 3: palavras-chave para iniciar cadastro ──
     const textUpper = textoMensagem.toUpperCase().trim()
     const isCadastro = ['2', 'CADASTRO', 'CADASTRAR', 'OI', 'OLÁ', 'OLA', 'INICIO', 'INÍCIO', 'START']
       .includes(textUpper)
 
-    if (isCadastro || tipoMensagem === 'image') {
-      // Verifica se já tem sessão de cadastro ativa
-      const sessao = await db.buscarSessao(celular)
-      if (sessao || isCadastro || tipoMensagem === 'image') {
-        await handleCadastro(celular, textoMensagem, tipoMensagem, imagemBase64)
-        return
-      }
+    if (isCadastro) {
+      await handleCadastro(celular, textoMensagem, tipoMensagem, imagemBase64)
+      return
     }
 
-    // Opção 1 do menu — sem sessão ativa e sem QR Code
+    // ── PRIORIDADE 4: opção 1 do menu — instrução do QR Code ──
     if (textUpper === '1') {
       await enviarTexto(
         celular,
         `📷 Para abrir a geladeira, aponte a câmera do seu celular para o *QR Code* colado na geladeira.\n\nÉ rápido e simples! 😊`
       )
-      return
-    }
-
-    // Sessão de cadastro ativa — continua o fluxo
-    const sessaoAtiva = await db.buscarSessao(celular)
-    if (sessaoAtiva) {
-      await handleCadastro(celular, textoMensagem, tipoMensagem, imagemBase64)
       return
     }
 
