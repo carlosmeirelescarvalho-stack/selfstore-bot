@@ -3,7 +3,6 @@
 const db = require('./db')
 const { enviarTexto, notificarAdmin, transferirParaHumano, MSG } = require('./whatsapp')
 const { validarCPF, validarDataNascimento, isMaiorDeIdade, validarTelefone, normalizarCelular } = require('./validacao')
-const { cadastrarRostoIDFace, urlParaBase64 } = require('./idface')
 
 // Etapas do cadastro em ordem
 const ETAPAS = ['nome', 'cpf', 'data_nasc', 'telefone', 'condominio', 'bloco', 'unidade', 'foto']
@@ -238,6 +237,8 @@ async function sincronizarComIDFace(morador, fotoBase64, condominio) {
       console.warn('iDFace não configurado para este condomínio')
       return
     }
+    // Importa idface de forma lazy para evitar dependência circular
+    const { cadastrarRostoIDFace } = require('./idface')
     await cadastrarRostoIDFace(
       condominio.idface_ip,
       condominio.idface_senha,
@@ -248,7 +249,6 @@ async function sincronizarComIDFace(morador, fotoBase64, condominio) {
     console.log(`Rosto cadastrado no iDFace para morador ${morador.id}`)
   } catch (err) {
     console.error('Erro ao sincronizar com iDFace:', err)
-    // Não bloqueia o cadastro — admin pode sincronizar manualmente pelo painel
   }
 }
 
