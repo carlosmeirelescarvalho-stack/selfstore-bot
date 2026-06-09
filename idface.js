@@ -95,10 +95,12 @@ async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64, usuario = 'a
   )
 
   const fotoData = await resFoto.json().catch(() => ({}))
+  console.log('iDFace user_set_image resposta:', JSON.stringify(fotoData))
 
   if (!resFoto.ok || fotoData.success === false) {
-    const erros = fotoData.errors?.map(e => e.message).join(', ') || resFoto.status
-    throw new Error(`iDFace cadastrar foto falhou: ${erros}`)
+    const erros = fotoData.errors?.map(e => `[${e.code}] ${e.message}`).join(', ') || `HTTP ${resFoto.status}`
+    const scores = fotoData.scores ? JSON.stringify(fotoData.scores) : 'N/A'
+    throw new Error(`iDFace cadastrar foto falhou: ${erros} | scores: ${scores}`)
   }
 
   console.log(`iDFace: rosto cadastrado com sucesso para user_id ${userId} (${morador.nome})`)
