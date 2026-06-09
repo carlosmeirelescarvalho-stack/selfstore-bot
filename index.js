@@ -200,7 +200,7 @@ app.patch('/admin/moradores/:id', async (req, res) => {
             const { data: cond } = await supa.from('condominios').select('*').eq('id', morador.condominio_id).single()
             if (cond?.idface_ip) {
               const fotoBase64 = await urlParaBase64(morador.foto_url)
-              await cadastrarRostoIDFace(cond.idface_ip, cond.idface_senha, morador, fotoBase64)
+              await cadastrarRostoIDFace(cond.idface_ip, cond.idface_senha, morador, fotoBase64, cond.idface_user || 'admin')
               console.log(`Rosto sincronizado com iDFace: ${morador.nome}`)
             }
           } catch(e) {
