@@ -1,16 +1,19 @@
 // idface.js — integração com iDFace Pro via API REST
+// Baseado na documentação oficial: controlid.com.br/docs/access-api-en/
 
+// Detecta protocolo: URLs com domínio usam https, IPs locais usam http
 function getProtocol(ip) {
   return (ip.includes('.com') || ip.includes('.net') || ip.includes('.org')) ? 'https' : 'http'
 }
 
-// Converte CPF para número inteiro (iDFace exige int64)
-// Remove pontos e traço e converte para número
+// Converte CPF para número inteiro (iDFace exige int64 no campo id)
 function cpfParaInt(cpf) {
   if (!cpf) return 0
-  return parseInt(cpf.replace(/\D/g, ''), 10)
+  return parseInt(String(cpf).replace(/\D/g, ''), 10)
 }
 
+// ─── LOGIN ────────────────────────────────────────────────────────
+// POST /login.fcgi
 async function loginIDFace(ip, senha, usuario = 'admin') {
   const proto = getProtocol(ip)
   const res = await fetch(`${proto}://${ip}/login.fcgi`, {
@@ -24,9 +27,14 @@ async function loginIDFace(ip, senha, usuario = 'admin') {
   return data.session
 }
 
+// ─── CADASTRAR ROSTO ──────────────────────────────────────────────
+// Fluxo correto conforme documentação:
+// 1. Cria usuário via create_objects (se não existir)
+// 2. Envia foto via user_set_image.fcgi com Content-Type: application/octet-stream
 async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64, usuario = 'admin') {
   const proto = getProtocol(ip)
   const session = await loginIDFace(ip, senha, usuario)
+  const userId = cpfParaInt(morador.cpf)
 
   // 1. Verifica se usuário já existe
   const resCheck = await fetch(`${proto}://${ip}/load_objects.fcgi?session=${session}`, {
@@ -34,23 +42,23 @@ async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64, usuario = 'a
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       object: 'users',
-      where: [{ object: 'users', field: 'id', operator: '=', value: cpfParaInt(morador.cpf) }]
+      where: [{ object: 'users', field: 'id', operator: '=', value: userId }]
     }),
   })
   const checkData = await resCheck.json()
   const usuarioExiste = checkData?.users?.length > 0
 
   if (!usuarioExiste) {
-    // 2a. Cria o usuário
+    // 2a. Cria o usuário (id como int64, registration e name como strings)
     const resUser = await fetch(`${proto}://${ip}/create_objects.fcgi?session=${session}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         object: 'users',
         values: [{
-          id: cpfParaInt(morador.cpf),
+          id: userId,
           name: morador.nome,
-          registration: morador.cpf || '',
+          registration: String(morador.cpf || '').replace(/\D/g, ''),
         }],
       }),
     })
@@ -59,79 +67,73 @@ async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64, usuario = 'a
       throw new Error(`iDFace criar usuário falhou: ${resUser.status} / ${err}`)
     }
   } else {
-    // 2b. Atualiza o usuário existente
-    const resUpd = await fetch(`${proto}://${ip}/modify_objects.fcgi?session=${session}`, {
+    // 2b. Atualiza nome do usuário existente via modify_objects
+    await fetch(`${proto}://${ip}/modify_objects.fcgi?session=${session}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         object: 'users',
         values: { name: morador.nome },
-        where: [{ object: 'users', field: 'id', operator: '=', value: cpfParaInt(morador.cpf) }]
+        where: [{ object: 'users', field: 'id', operator: '=', value: userId }]
       }),
     })
-    if (!resUpd.ok) {
-      const err = await resUpd.text().catch(() => '')
-      throw new Error(`iDFace atualizar usuário falhou: ${resUpd.status} / ${err}`)
+  }
+
+  // 3. Envia foto via user_set_image.fcgi
+  // Content-Type: application/octet-stream — foto como bytes binários
+  // Parâmetros passados na query string: user_id, timestamp, match
+  const fotoBuffer = Buffer.from(fotoBase64, 'base64')
+  const timestamp = Math.floor(Date.now() / 1000)
+
+  const resFoto = await fetch(
+    `${proto}://${ip}/user_set_image.fcgi?user_id=${userId}&timestamp=${timestamp}&match=0&session=${session}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: fotoBuffer,
     }
+  )
+
+  const fotoData = await resFoto.json().catch(() => ({}))
+
+  if (!resFoto.ok || fotoData.success === false) {
+    const erros = fotoData.errors?.map(e => e.message).join(', ') || resFoto.status
+    throw new Error(`iDFace cadastrar foto falhou: ${erros}`)
   }
 
-  // 3. Remove template facial anterior se existir
-  await fetch(`${proto}://${ip}/destroy_objects.fcgi?session=${session}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      object: 'face_templates',
-      where: [{ object: 'face_templates', field: 'user_id', operator: '=', value: cpfParaInt(morador.cpf) }]
-    }),
-  })
-
-  // 4. Cadastra novo template facial
-  const resFace = await fetch(`${proto}://${ip}/create_objects.fcgi?session=${session}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      object: 'face_templates',
-      values: [{
-        user_id: cpfParaInt(morador.cpf),
-        face_image: fotoBase64,
-      }],
-    }),
-  })
-  if (!resFace.ok) {
-    const err = await resFace.text().catch(() => '')
-    throw new Error(`iDFace cadastrar face falhou: ${resFace.status} / ${err}`)
-  }
-
+  console.log(`iDFace: rosto cadastrado com sucesso para user_id ${userId} (${morador.nome})`)
   return true
 }
 
-async function removerUsuarioIDFace(ip, senha, moradorId, usuario = 'admin') {
+// ─── REMOVER USUÁRIO ──────────────────────────────────────────────
+// Remove foto e depois o usuário
+async function removerUsuarioIDFace(ip, senha, moradorCpf, usuario = 'admin') {
   const proto = getProtocol(ip)
   const session = await loginIDFace(ip, senha, usuario)
+  const userId = cpfParaInt(moradorCpf)
 
-  // Remove templates faciais primeiro
-  await fetch(`${proto}://${ip}/destroy_objects.fcgi?session=${session}`, {
+  // 1. Remove foto via user_destroy_image.fcgi
+  await fetch(`${proto}://${ip}/user_destroy_image.fcgi?session=${session}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      object: 'face_templates',
-      where: [{ object: 'face_templates', field: 'user_id', operator: '=', value: parseInt(String(moradorId).replace(/\D/g, ''), 10) }]
-    }),
+    body: JSON.stringify({ user_id: userId }),
   })
 
-  // Remove o usuário
+  // 2. Remove o usuário via destroy_objects
   const res = await fetch(`${proto}://${ip}/destroy_objects.fcgi?session=${session}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       object: 'users',
-      where: [{ object: 'users', field: 'id', operator: '=', value: parseInt(String(moradorId).replace(/\D/g, ''), 10) }]
+      where: [{ object: 'users', field: 'id', operator: '=', value: userId }]
     }),
   })
   if (!res.ok) throw new Error(`iDFace remover usuário falhou: ${res.status}`)
   return true
 }
 
+// ─── ABRIR PORTA ─────────────────────────────────────────────────
+// POST /execute_actions.fcgi — action: 'door', parameters: 'door=1'
 async function abrirPortaIDFace(ip, senha, usuario = 'admin') {
   const proto = getProtocol(ip)
   const session = await loginIDFace(ip, senha, usuario)
@@ -147,6 +149,7 @@ async function abrirPortaIDFace(ip, senha, usuario = 'admin') {
   return true
 }
 
+// ─── URL PARA BASE64 ─────────────────────────────────────────────
 async function urlParaBase64(url) {
   const res = await fetch(url)
   if (!res.ok) throw new Error(`Erro ao buscar foto: ${res.status}`)
