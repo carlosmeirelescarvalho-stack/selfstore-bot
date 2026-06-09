@@ -1,7 +1,5 @@
 // idface.js — integração com iDFace Pro via API REST
 
-// Detecta protocolo automaticamente
-// URLs com domínio (.com, .net) usam https, IPs locais usam http
 function getProtocol(ip) {
   return (ip.includes('.com') || ip.includes('.net') || ip.includes('.org')) ? 'https' : 'http'
 }
@@ -23,53 +21,79 @@ async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64, usuario = 'a
   const proto = getProtocol(ip)
   const session = await loginIDFace(ip, senha, usuario)
 
-  const resUser = await fetch(`${proto}://${ip}/create_objects.fcgi?session=${session}`, {
+  // 1. Verifica se usuário já existe
+  const resCheck = await fetch(`${proto}://${ip}/load_objects.fcgi?session=${session}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      object: 'user',
-      values: [{
-        id: morador.id.toString(),
-        name: morador.nome,
-        registration: morador.cpf,
-      }],
+      object: 'users',
+      where: [{ object: 'users', field: 'id', operator: '=', value: parseInt(morador.id) || morador.id.toString() }]
     }),
   })
-  if (!resUser.ok) {
-    const errBody = await resUser.text().catch(() => '')
-    // Se usuário já existe (400/409), tenta atualizar em vez de criar
-    if (resUser.status === 400 || resUser.status === 409) {
-      console.log(`Usuário já existe no iDFace, atualizando... (${errBody})`)
-      const resUpd = await fetch(`${proto}://${ip}/set_object_properties.fcgi?session=${session}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          object: 'user',
-          where: { id: morador.id.toString() },
-          values: { name: morador.nome },
-        }),
-      })
-      if (!resUpd.ok) {
-        const updErr = await resUpd.text().catch(() => '')
-        throw new Error(`iDFace criar/atualizar usuário falhou: ${resUser.status} / ${updErr}`)
-      }
-    } else {
-      throw new Error(`iDFace criar usuário falhou: ${resUser.status} / ${errBody}`)
+  const checkData = await resCheck.json()
+  const usuarioExiste = checkData?.users?.length > 0
+
+  if (!usuarioExiste) {
+    // 2a. Cria o usuário
+    const resUser = await fetch(`${proto}://${ip}/create_objects.fcgi?session=${session}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        object: 'users',
+        values: [{
+          id: morador.id.toString(),
+          name: morador.nome,
+          registration: morador.cpf || '',
+        }],
+      }),
+    })
+    if (!resUser.ok) {
+      const err = await resUser.text().catch(() => '')
+      throw new Error(`iDFace criar usuário falhou: ${resUser.status} / ${err}`)
+    }
+  } else {
+    // 2b. Atualiza o usuário existente
+    const resUpd = await fetch(`${proto}://${ip}/modify_objects.fcgi?session=${session}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        object: 'users',
+        values: { name: morador.nome },
+        where: [{ object: 'users', field: 'id', operator: '=', value: morador.id.toString() }]
+      }),
+    })
+    if (!resUpd.ok) {
+      const err = await resUpd.text().catch(() => '')
+      throw new Error(`iDFace atualizar usuário falhou: ${resUpd.status} / ${err}`)
     }
   }
 
+  // 3. Remove template facial anterior se existir
+  await fetch(`${proto}://${ip}/destroy_objects.fcgi?session=${session}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      object: 'face_templates',
+      where: [{ object: 'face_templates', field: 'user_id', operator: '=', value: morador.id.toString() }]
+    }),
+  })
+
+  // 4. Cadastra novo template facial
   const resFace = await fetch(`${proto}://${ip}/create_objects.fcgi?session=${session}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      object: 'face_template',
+      object: 'face_templates',
       values: [{
         user_id: morador.id.toString(),
         face_image: fotoBase64,
       }],
     }),
   })
-  if (!resFace.ok) throw new Error(`iDFace cadastrar face falhou: ${resFace.status}`)
+  if (!resFace.ok) {
+    const err = await resFace.text().catch(() => '')
+    throw new Error(`iDFace cadastrar face falhou: ${resFace.status} / ${err}`)
+  }
 
   return true
 }
@@ -78,12 +102,23 @@ async function removerUsuarioIDFace(ip, senha, moradorId, usuario = 'admin') {
   const proto = getProtocol(ip)
   const session = await loginIDFace(ip, senha, usuario)
 
+  // Remove templates faciais primeiro
+  await fetch(`${proto}://${ip}/destroy_objects.fcgi?session=${session}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      object: 'face_templates',
+      where: [{ object: 'face_templates', field: 'user_id', operator: '=', value: moradorId.toString() }]
+    }),
+  })
+
+  // Remove o usuário
   const res = await fetch(`${proto}://${ip}/destroy_objects.fcgi?session=${session}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      object: 'user',
-      where: { id: moradorId.toString() },
+      object: 'users',
+      where: [{ object: 'users', field: 'id', operator: '=', value: moradorId.toString() }]
     }),
   })
   if (!res.ok) throw new Error(`iDFace remover usuário falhou: ${res.status}`)
