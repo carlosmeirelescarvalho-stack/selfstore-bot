@@ -1,9 +1,14 @@
-// services/idface.js — integração com iDFace Pro via API REST
+// idface.js — integração com iDFace Pro via API REST
 
-// O iDFace usa autenticação por sessão (login → session token → usa nas chamadas)
+// Detecta protocolo automaticamente
+// URLs com domínio (.com, .net) usam https, IPs locais usam http
+function getProtocol(ip) {
+  return (ip.includes('.com') || ip.includes('.net') || ip.includes('.org')) ? 'https' : 'http'
+}
 
 async function loginIDFace(ip, senha) {
-  const res = await fetch(`http://${ip}/login.fcgi`, {
+  const proto = getProtocol(ip)
+  const res = await fetch(`${proto}://${ip}/login.fcgi`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ login: 'admin', password: senha }),
@@ -14,13 +19,11 @@ async function loginIDFace(ip, senha) {
   return data.session
 }
 
-// Cadastra usuário no iDFace com foto do rosto
-// fotoBase64: imagem em base64 (sem o prefixo data:image/...)
 async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64) {
+  const proto = getProtocol(ip)
   const session = await loginIDFace(ip, senha)
 
-  // 1. Cria o usuário
-  const resUser = await fetch(`http://${ip}/create_objects.fcgi?session=${session}`, {
+  const resUser = await fetch(`${proto}://${ip}/create_objects.fcgi?session=${session}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -29,14 +32,12 @@ async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64) {
         id: morador.id.toString(),
         name: morador.nome,
         registration: morador.cpf,
-        // password deixamos vazio — acesso só por face
       }],
     }),
   })
   if (!resUser.ok) throw new Error(`iDFace criar usuário falhou: ${resUser.status}`)
 
-  // 2. Vincula a foto (template facial)
-  const resFace = await fetch(`http://${ip}/create_objects.fcgi?session=${session}`, {
+  const resFace = await fetch(`${proto}://${ip}/create_objects.fcgi?session=${session}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -52,11 +53,11 @@ async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64) {
   return true
 }
 
-// Remove usuário do iDFace (quando morador é rejeitado ou removido)
 async function removerUsuarioIDFace(ip, senha, moradorId) {
+  const proto = getProtocol(ip)
   const session = await loginIDFace(ip, senha)
 
-  const res = await fetch(`http://${ip}/destroy_objects.fcgi?session=${session}`, {
+  const res = await fetch(`${proto}://${ip}/destroy_objects.fcgi?session=${session}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -68,11 +69,11 @@ async function removerUsuarioIDFace(ip, senha, moradorId) {
   return true
 }
 
-// Abre a porta remotamente via API (abertura de emergência ou teste)
 async function abrirPortaIDFace(ip, senha) {
+  const proto = getProtocol(ip)
   const session = await loginIDFace(ip, senha)
 
-  const res = await fetch(`http://${ip}/execute_actions.fcgi?session=${session}`, {
+  const res = await fetch(`${proto}://${ip}/execute_actions.fcgi?session=${session}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -83,7 +84,6 @@ async function abrirPortaIDFace(ip, senha) {
   return true
 }
 
-// Converte URL pública de foto para base64 (para enviar ao iDFace)
 async function urlParaBase64(url) {
   const res = await fetch(url)
   if (!res.ok) throw new Error(`Erro ao buscar foto: ${res.status}`)
@@ -97,3 +97,4 @@ module.exports = {
   abrirPortaIDFace,
   urlParaBase64,
 }
+
