@@ -55,9 +55,29 @@ app.post('/webhook', async (req, res) => {
 
     const tipoMensagem = detectarTipo(msg)
     const textoMensagem = extrairTexto(msg, tipoMensagem)
-    const imagemBase64 = tipoMensagem === 'image'
-      ? msg.imageMessage?.jpegThumbnail || null
-      : null
+    // Extrai base64 da imagem — Evolution API v2 pode retornar Uint8Array ou string
+    let imagemBase64 = null
+    if (tipoMensagem === 'image') {
+      const thumb = msg.imageMessage?.jpegThumbnail
+      if (thumb) {
+        if (typeof thumb === 'string') {
+          imagemBase64 = thumb
+        } else if (thumb instanceof Uint8Array || Buffer.isBuffer(thumb)) {
+          imagemBase64 = Buffer.from(thumb).toString('base64')
+        } else if (typeof thumb === 'object') {
+          // Objeto com dados numéricos (Uint8Array serializado como JSON)
+          try {
+            imagemBase64 = Buffer.from(Object.values(thumb)).toString('base64')
+          } catch(e) {
+            imagemBase64 = null
+          }
+        }
+      }
+      // Se não conseguiu extrair thumbnail, tenta mediaUrl
+      if (!imagemBase64 && msg.imageMessage?.mediaUrl) {
+        imagemBase64 = msg.imageMessage.mediaUrl // URL para download posterior
+      }
+    }
 
     // ── ROTEAMENTO ──────────────────────────────────────────────
 
@@ -329,3 +349,4 @@ function extrairTexto(msg, tipo) {
 app.listen(config.PORT, () => {
   console.log(`✅ SelfStore Bot rodando na porta ${config.PORT}`)
 })
+
