@@ -6,12 +6,12 @@ function getProtocol(ip) {
   return (ip.includes('.com') || ip.includes('.net') || ip.includes('.org')) ? 'https' : 'http'
 }
 
-async function loginIDFace(ip, senha) {
+async function loginIDFace(ip, senha, usuario = 'admin') {
   const proto = getProtocol(ip)
   const res = await fetch(`${proto}://${ip}/login.fcgi`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ login: 'admin', password: senha }),
+    body: JSON.stringify({ login: usuario, password: senha }),
   })
   if (!res.ok) throw new Error(`iDFace login falhou: ${res.status}`)
   const data = await res.json()
@@ -19,9 +19,9 @@ async function loginIDFace(ip, senha) {
   return data.session
 }
 
-async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64) {
+async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64, usuario = 'admin') {
   const proto = getProtocol(ip)
-  const session = await loginIDFace(ip, senha)
+  const session = await loginIDFace(ip, senha, usuario)
 
   const resUser = await fetch(`${proto}://${ip}/create_objects.fcgi?session=${session}`, {
     method: 'POST',
@@ -53,9 +53,9 @@ async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64) {
   return true
 }
 
-async function removerUsuarioIDFace(ip, senha, moradorId) {
+async function removerUsuarioIDFace(ip, senha, moradorId, usuario = 'admin') {
   const proto = getProtocol(ip)
-  const session = await loginIDFace(ip, senha)
+  const session = await loginIDFace(ip, senha, usuario)
 
   const res = await fetch(`${proto}://${ip}/destroy_objects.fcgi?session=${session}`, {
     method: 'POST',
@@ -69,9 +69,9 @@ async function removerUsuarioIDFace(ip, senha, moradorId) {
   return true
 }
 
-async function abrirPortaIDFace(ip, senha) {
+async function abrirPortaIDFace(ip, senha, usuario = 'admin') {
   const proto = getProtocol(ip)
-  const session = await loginIDFace(ip, senha)
+  const session = await loginIDFace(ip, senha, usuario)
 
   const res = await fetch(`${proto}://${ip}/execute_actions.fcgi?session=${session}`, {
     method: 'POST',
@@ -97,4 +97,3 @@ module.exports = {
   abrirPortaIDFace,
   urlParaBase64,
 }
-
