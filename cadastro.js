@@ -242,7 +242,8 @@ async function sincronizarComIDFace(morador, fotoBase64, condominio) {
       condominio.idface_ip,
       condominio.idface_senha,
       morador,
-      fotoBase64
+      fotoBase64,
+      condominio.idface_user || 'admin'
     )
     console.log(`Rosto cadastrado no iDFace para morador ${morador.id}`)
   } catch (err) {
