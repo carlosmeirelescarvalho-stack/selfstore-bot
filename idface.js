@@ -4,6 +4,13 @@ function getProtocol(ip) {
   return (ip.includes('.com') || ip.includes('.net') || ip.includes('.org')) ? 'https' : 'http'
 }
 
+// Converte CPF para número inteiro (iDFace exige int64)
+// Remove pontos e traço e converte para número
+function cpfParaInt(cpf) {
+  if (!cpf) return 0
+  return parseInt(cpf.replace(/\D/g, ''), 10)
+}
+
 async function loginIDFace(ip, senha, usuario = 'admin') {
   const proto = getProtocol(ip)
   const res = await fetch(`${proto}://${ip}/login.fcgi`, {
@@ -27,7 +34,7 @@ async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64, usuario = 'a
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       object: 'users',
-      where: [{ object: 'users', field: 'id', operator: '=', value: parseInt(morador.id) || morador.id.toString() }]
+      where: [{ object: 'users', field: 'id', operator: '=', value: cpfParaInt(morador.cpf) }]
     }),
   })
   const checkData = await resCheck.json()
@@ -41,7 +48,7 @@ async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64, usuario = 'a
       body: JSON.stringify({
         object: 'users',
         values: [{
-          id: morador.id.toString(),
+          id: cpfParaInt(morador.cpf),
           name: morador.nome,
           registration: morador.cpf || '',
         }],
@@ -59,7 +66,7 @@ async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64, usuario = 'a
       body: JSON.stringify({
         object: 'users',
         values: { name: morador.nome },
-        where: [{ object: 'users', field: 'id', operator: '=', value: morador.id.toString() }]
+        where: [{ object: 'users', field: 'id', operator: '=', value: cpfParaInt(morador.cpf) }]
       }),
     })
     if (!resUpd.ok) {
@@ -74,7 +81,7 @@ async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64, usuario = 'a
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       object: 'face_templates',
-      where: [{ object: 'face_templates', field: 'user_id', operator: '=', value: morador.id.toString() }]
+      where: [{ object: 'face_templates', field: 'user_id', operator: '=', value: cpfParaInt(morador.cpf) }]
     }),
   })
 
@@ -85,7 +92,7 @@ async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64, usuario = 'a
     body: JSON.stringify({
       object: 'face_templates',
       values: [{
-        user_id: morador.id.toString(),
+        user_id: cpfParaInt(morador.cpf),
         face_image: fotoBase64,
       }],
     }),
@@ -108,7 +115,7 @@ async function removerUsuarioIDFace(ip, senha, moradorId, usuario = 'admin') {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       object: 'face_templates',
-      where: [{ object: 'face_templates', field: 'user_id', operator: '=', value: moradorId.toString() }]
+      where: [{ object: 'face_templates', field: 'user_id', operator: '=', value: parseInt(String(moradorId).replace(/\D/g, ''), 10) }]
     }),
   })
 
@@ -118,7 +125,7 @@ async function removerUsuarioIDFace(ip, senha, moradorId, usuario = 'admin') {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       object: 'users',
-      where: [{ object: 'users', field: 'id', operator: '=', value: moradorId.toString() }]
+      where: [{ object: 'users', field: 'id', operator: '=', value: parseInt(String(moradorId).replace(/\D/g, ''), 10) }]
     }),
   })
   if (!res.ok) throw new Error(`iDFace remover usuário falhou: ${res.status}`)
