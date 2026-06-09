@@ -10,6 +10,33 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 const { handleGeladeira, isComandoGeladeira } = require('./geladeira')
 const { enviarTexto, MSG } = require('./whatsapp')
 const db = require('./db')
+const { cadastrarRostoIDFace, urlParaBase64 } = require('./idface')
+
+// Busca imagem completa via Evolution API (evita thumbnail de baixa resolução)
+async function buscarImagemCompleta(messageId) {
+  try {
+    const res = await fetch(
+      `${process.env.EVOLUTION_API_URL}/chat/getBase64FromMediaMessage/${process.env.EVOLUTION_INSTANCE}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': process.env.EVOLUTION_API_KEY,
+        },
+        body: JSON.stringify({
+          message: { key: { id: messageId } },
+          convertToMp4: false,
+        }),
+      }
+    )
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.base64 || null
+  } catch(e) {
+    console.error('Erro ao buscar imagem completa:', e.message)
+    return null
+  }
+}
 
 // Helper Supabase com ws (evita erro de WebSocket no Node 20)
 const ws = require('ws')
@@ -55,27 +82,27 @@ app.post('/webhook', async (req, res) => {
 
     const tipoMensagem = detectarTipo(msg)
     const textoMensagem = extrairTexto(msg, tipoMensagem)
-    // Extrai base64 da imagem — Evolution API v2 pode retornar Uint8Array ou string
+    // Extrai imagem em resolução completa via Evolution API
+    // O jpegThumbnail é uma miniatura — precisamos buscar a imagem original
     let imagemBase64 = null
+    let messageId = null
     if (tipoMensagem === 'image') {
-      const thumb = msg.imageMessage?.jpegThumbnail
-      if (thumb) {
-        if (typeof thumb === 'string') {
-          imagemBase64 = thumb
-        } else if (thumb instanceof Uint8Array || Buffer.isBuffer(thumb)) {
-          imagemBase64 = Buffer.from(thumb).toString('base64')
-        } else if (typeof thumb === 'object') {
-          // Objeto com dados numéricos (Uint8Array serializado como JSON)
-          try {
-            imagemBase64 = Buffer.from(Object.values(thumb)).toString('base64')
-          } catch(e) {
-            imagemBase64 = null
+      messageId = evento.data?.key?.id || null
+      if (messageId) {
+        // Busca imagem completa (mínimo 160x160 exigido pelo iDFace)
+        imagemBase64 = await buscarImagemCompleta(messageId)
+      }
+      // Fallback: tenta o thumbnail se não conseguiu a imagem completa
+      if (!imagemBase64) {
+        const thumb = msg.imageMessage?.jpegThumbnail
+        if (thumb) {
+          if (typeof thumb === 'string') imagemBase64 = thumb
+          else if (thumb instanceof Uint8Array || Buffer.isBuffer(thumb)) {
+            imagemBase64 = Buffer.from(thumb).toString('base64')
+          } else if (typeof thumb === 'object') {
+            try { imagemBase64 = Buffer.from(Object.values(thumb)).toString('base64') } catch(e) {}
           }
         }
-      }
-      // Se não conseguiu extrair thumbnail, tenta mediaUrl
-      if (!imagemBase64 && msg.imageMessage?.mediaUrl) {
-        imagemBase64 = msg.imageMessage.mediaUrl // URL para download posterior
       }
     }
 
@@ -185,8 +212,7 @@ app.patch('/admin/moradores/:id', async (req, res) => {
 
     // Notifica o morador via WhatsApp após aprovação ou rejeição
     if (morador && morador.celular_whatsapp) {
-      const { enviarTexto, MSG } = require('./whatsapp')
-      const { cadastrarRostoIDFace, urlParaBase64 } = require('./idface')
+      // enviarTexto, cadastrarRostoIDFace, urlParaBase64 já importados no topo
 
       if (status === 'aprovado') {
         await enviarTexto(morador.celular_whatsapp, MSG.cadastroAprovadoAuto(morador.nome))
