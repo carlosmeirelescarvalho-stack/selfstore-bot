@@ -176,12 +176,41 @@ app.get('/admin/moradores', async (req, res) => {
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
-// PATCH /admin/moradores/:id — atualiza status
+// PATCH /admin/moradores/:id — atualiza status e notifica morador
 app.patch('/admin/moradores/:id', async (req, res) => {
   try {
     const { status } = req.body
     const morador = await db.atualizarStatusMorador(req.params.id, status)
     res.json({ morador })
+
+    // Notifica o morador via WhatsApp após aprovação ou rejeição
+    if (morador && morador.celular_whatsapp) {
+      const { enviarTexto, MSG } = require('./whatsapp')
+      const { cadastrarRostoIDFace, urlParaBase64 } = require('./idface')
+
+      if (status === 'aprovado') {
+        await enviarTexto(morador.celular_whatsapp, MSG.cadastroAprovadoAuto(morador.nome))
+
+        // Sincroniza rosto com iDFace se tiver foto
+        if (morador.foto_url) {
+          try {
+            const { createClient } = require('@supabase/supabase-js')
+            const ws = require('ws')
+            const supa = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, { realtime: { transport: ws } })
+            const { data: cond } = await supa.from('condominios').select('*').eq('id', morador.condominio_id).single()
+            if (cond?.idface_ip) {
+              const fotoBase64 = await urlParaBase64(morador.foto_url)
+              await cadastrarRostoIDFace(cond.idface_ip, cond.idface_senha, morador, fotoBase64)
+              console.log(`Rosto sincronizado com iDFace: ${morador.nome}`)
+            }
+          } catch(e) {
+            console.error('Erro ao sincronizar iDFace:', e.message)
+          }
+        }
+      } else if (status === 'rejeitado') {
+        await enviarTexto(morador.celular_whatsapp, MSG.acessoNegadoRejeitado())
+      }
+    }
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
@@ -349,4 +378,3 @@ function extrairTexto(msg, tipo) {
 app.listen(config.PORT, () => {
   console.log(`✅ SelfStore Bot rodando na porta ${config.PORT}`)
 })
-
