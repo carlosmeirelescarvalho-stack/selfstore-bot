@@ -3,7 +3,6 @@
 const db = require('./db')
 const { enviarTexto, MSG } = require('./whatsapp')
 const { validarCPF, validarDataNascimento, isMaiorDeIdade, validarTelefone, normalizarCelular } = require('./validacao')
-const { cadastrarRostoIDFace, urlParaBase64 } = require('./idface')
 
 // ─── VERIFICA SE NÚMERO É ADMIN ───────────────────
 async function isAdmin(celular) {
@@ -157,6 +156,7 @@ async function confirmarAprovacao(celular, resposta, dados) {
     }
     if (dados.foto_url && dados.condominio?.idface_ip) {
       try {
+        const { cadastrarRostoIDFace, urlParaBase64 } = require('./idface')
         const fotoBase64 = await urlParaBase64(dados.foto_url)
         await cadastrarRostoIDFace(dados.condominio.idface_ip, dados.condominio.idface_senha,
           { id: dados.morador_id, nome: dados.morador_nome, cpf: '' }, fotoBase64)
