@@ -164,8 +164,24 @@ async function processarEtapa(celular, mensagem, tipoMensagem, imagemBase64, ses
 
 async function finalizarCadastro(celular, dados, imagemBase64) {
   // 1. Faz upload da foto para o Supabase Storage
-  const buffer = Buffer.from(imagemBase64, 'base64')
-  const fotoUrl = await db.uploadFoto(celular, buffer, 'image/jpeg')
+  let fotoUrl = null
+  try {
+    let buffer
+    if (typeof imagemBase64 === 'string' && imagemBase64.startsWith('http')) {
+      // É uma URL — faz download e converte
+      const res = await fetch(imagemBase64)
+      const ab = await res.arrayBuffer()
+      buffer = Buffer.from(ab)
+    } else if (typeof imagemBase64 === 'string') {
+      buffer = Buffer.from(imagemBase64, 'base64')
+    } else {
+      buffer = Buffer.from(imagemBase64)
+    }
+    fotoUrl = await db.uploadFoto(celular, buffer, 'image/jpeg')
+  } catch(e) {
+    console.error('Erro ao processar foto:', e)
+    // Continua sem foto — admin pode adicionar depois
+  }
 
   // 2. Busca condomínio para saber flag de auto-aprovação
   const condominios = await db.listarCondominios()
