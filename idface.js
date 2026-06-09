@@ -35,7 +35,28 @@ async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64, usuario = 'a
       }],
     }),
   })
-  if (!resUser.ok) throw new Error(`iDFace criar usuário falhou: ${resUser.status}`)
+  if (!resUser.ok) {
+    const errBody = await resUser.text().catch(() => '')
+    // Se usuário já existe (400/409), tenta atualizar em vez de criar
+    if (resUser.status === 400 || resUser.status === 409) {
+      console.log(`Usuário já existe no iDFace, atualizando... (${errBody})`)
+      const resUpd = await fetch(`${proto}://${ip}/set_object_properties.fcgi?session=${session}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          object: 'user',
+          where: { id: morador.id.toString() },
+          values: { name: morador.nome },
+        }),
+      })
+      if (!resUpd.ok) {
+        const updErr = await resUpd.text().catch(() => '')
+        throw new Error(`iDFace criar/atualizar usuário falhou: ${resUser.status} / ${updErr}`)
+      }
+    } else {
+      throw new Error(`iDFace criar usuário falhou: ${resUser.status} / ${errBody}`)
+    }
+  }
 
   const resFace = await fetch(`${proto}://${ip}/create_objects.fcgi?session=${session}`, {
     method: 'POST',
