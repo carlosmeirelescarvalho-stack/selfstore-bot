@@ -10,7 +10,6 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 const { handleGeladeira, isComandoGeladeira } = require('./geladeira')
 const { enviarTexto, MSG } = require('./whatsapp')
 const db = require('./db')
-const { cadastrarRostoIDFace, urlParaBase64 } = require('./idface')
 
 // Busca imagem completa via Evolution API (evita thumbnail de baixa resolução)
 async function buscarImagemCompleta(messageId) {
@@ -225,6 +224,7 @@ app.patch('/admin/moradores/:id', async (req, res) => {
             const supa = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, { realtime: { transport: ws } })
             const { data: cond } = await supa.from('condominios').select('*').eq('id', morador.condominio_id).single()
             if (cond?.idface_ip) {
+              const { cadastrarRostoIDFace, urlParaBase64 } = require('./idface')
               const fotoBase64 = await urlParaBase64(morador.foto_url)
               await cadastrarRostoIDFace(cond.idface_ip, cond.idface_senha, morador, fotoBase64, cond.idface_user || 'admin')
               console.log(`Rosto sincronizado com iDFace: ${morador.nome}`)
@@ -372,8 +372,6 @@ app.post('/esp32/heartbeat', async (req, res) => {
     if (secret !== (process.env.ESP32_SECRET || 'troque-por-uma-chave-secreta-forte')) return
     const { geladeira, ip, evento } = req.body
     if (!geladeira || !ip) return
-    const sb = require('./db')
-    // atualiza IP direto no banco via supabase
     const supa = getSupa()
     await supa.from('geladeiras').update({ esp32_ip: ip }).ilike('nome', '%' + geladeira + '%')
     console.log('ESP32 heartbeat:', geladeira, 'IP:', ip, evento)
