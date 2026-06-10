@@ -103,6 +103,26 @@ async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64, usuario = 'a
     throw new Error(`iDFace cadastrar foto falhou: ${erros} | scores: ${scores}`)
   }
 
+  // 4. Vincula regra de acesso padrão (id=1 = sempre liberado)
+  // Necessário para que o usuário tenha acesso autorizado pelo iDFace
+  try {
+    await fetch(`${proto}://${ip}/create_objects.fcgi?session=${session}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        object: 'user_access_rules',
+        values: [{
+          user_id: userId,
+          access_rule_id: 1
+        }],
+      }),
+    })
+    console.log(`iDFace: regra de acesso vinculada para user_id ${userId}`)
+  } catch(e) {
+    console.warn('iDFace: aviso ao vincular regra de acesso:', e.message)
+    // Não bloqueia — usuário foi cadastrado mesmo sem regra
+  }
+
   console.log(`iDFace: rosto cadastrado com sucesso para user_id ${userId} (${morador.nome})`)
   return true
 }
