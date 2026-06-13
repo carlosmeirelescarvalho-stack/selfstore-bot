@@ -181,6 +181,7 @@ async function uploadFoto(celular, buffer, mimetype) {
 }
 
 module.exports = {
+  getSupa: supabase,
   buscarMoradorPorCelular,
   buscarMoradorPorCPF,
   criarMorador,

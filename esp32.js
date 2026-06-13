@@ -1,48 +1,17 @@
-// esp32.js — aciona geladeira via HTTP no ESP32
+// esp32.js — aciona geladeira via comando enfileirado para o Raspberry Pi
 
-const config = require('./config')
+const { getSupa } = require('./db')
 
-// Chave secreta compartilhada com o ESP32
-const ESP32_SECRET = process.env.ESP32_SECRET || 'troque-por-uma-chave-secreta-forte'
-
-// Envia comando de abertura para o ESP32 da geladeira
-async function abrirGeladeira(esp32Ip) {
-  const url = `http://${esp32Ip}/abrir`
-
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'X-ESP32-Secret': ESP32_SECRET,
-      'Content-Type': 'application/json',
-    },
-    signal: AbortSignal.timeout(5000),
-  })
-
-  if (!res.ok) throw new Error(`ESP32 respondeu com erro: ${res.status}`)
+// Salva um comando de abertura para a geladeira ser buscado via polling
+async function abrirGeladeira(geladeiraId, moradorId) {
+  const { error } = await getSupa().from('comandos_esp32').insert([{
+    geladeira_id: geladeiraId,
+    morador_id: moradorId,
+    acao: 'abrir',
+    status: 'pendente',
+  }])
+  if (error) throw error
   return true
 }
 
-// Fecha a geladeira manualmente (admin)
-async function fecharGeladeira(esp32Ip) {
-  const res = await fetch(`http://${esp32Ip}/fechar`, {
-    method: 'POST',
-    headers: { 'X-ESP32-Secret': ESP32_SECRET },
-    signal: AbortSignal.timeout(5000),
-  })
-  if (!res.ok) throw new Error(`ESP32 fechar erro: ${res.status}`)
-  return true
-}
-
-// Testa conectividade com o ESP32 (usado no painel admin)
-async function testarConexaoESP32(esp32Ip) {
-  try {
-    const res = await fetch(`http://${esp32Ip}/status`, {
-      signal: AbortSignal.timeout(3000),
-    })
-    return res.ok
-  } catch {
-    return false
-  }
-}
-
-module.exports = { abrirGeladeira, fecharGeladeira, testarConexaoESP32 }
+module.exports = { abrirGeladeira }

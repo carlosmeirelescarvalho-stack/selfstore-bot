@@ -69,17 +69,8 @@ async function handleGeladeira(celular, mensagem) {
       }
     }
 
-    // 6. Verifica se o ESP32 está configurado
-    if (!geladeira.esp32_ip) {
-      await enviarTexto(
-        celular,
-        `⚠️ Esta geladeira ainda não está configurada. Informe o administrador.`
-      )
-      return
-    }
-
-    // 7. Aciona o ESP32
-    await abrirGeladeira(geladeira.esp32_ip)
+    // 7. Enfileira o comando de abertura para o Raspberry Pi buscar via polling
+    await abrirGeladeira(geladeira.id, morador.id)
 
     // 8. Confirma para o morador
     await enviarTexto(celular, MSG.geladeiraAberta(geladeira.nome))

@@ -380,6 +380,65 @@ app.post('/esp32/heartbeat', async (req, res) => {
   }
 })
 
+// Raspberry Pi busca comandos pendentes via polling
+app.get('/esp32/comandos', async (req, res) => {
+  try {
+    const secret = req.headers['x-esp32-secret']
+    if (secret !== (process.env.ESP32_SECRET || 'troque-por-uma-chave-secreta-forte')) {
+      return res.sendStatus(401)
+    }
+    const { geladeira } = req.query
+    if (!geladeira) return res.json(null)
+
+    const supa = getSupa()
+    const { data: gel } = await supa
+      .from('geladeiras')
+      .select('id')
+      .ilike('nome', '%' + geladeira.split('@')[0].trim() + '%')
+      .single()
+    if (!gel) return res.json(null)
+
+    const { data: comando } = await supa
+      .from('comandos_esp32')
+      .select('id, acao')
+      .eq('geladeira_id', gel.id)
+      .eq('status', 'pendente')
+      .order('criado_em', { ascending: true })
+      .limit(1)
+      .single()
+    if (!comando) return res.json(null)
+
+    await supa.from('comandos_esp32').update({ status: 'enviado' }).eq('id', comando.id)
+
+    res.json({ action: comando.acao, comando_id: comando.id })
+  } catch (err) {
+    console.error('Erro /esp32/comandos:', err)
+    res.json(null)
+  }
+})
+
+// Raspberry Pi confirma execução do comando
+app.post('/esp32/comandos/ack', async (req, res) => {
+  try {
+    const secret = req.headers['x-esp32-secret']
+    if (secret !== (process.env.ESP32_SECRET || 'troque-por-uma-chave-secreta-forte')) {
+      return res.sendStatus(401)
+    }
+    const { comando_id } = req.body
+    if (!comando_id) return res.sendStatus(400)
+
+    const supa = getSupa()
+    await supa.from('comandos_esp32')
+      .update({ status: 'executado', executado_em: new Date().toISOString() })
+      .eq('id', comando_id)
+
+    res.sendStatus(200)
+  } catch (err) {
+    console.error('Erro /esp32/comandos/ack:', err)
+    res.sendStatus(500)
+  }
+})
+
 // ─── HELPERS ──────────────────────────────────────────────────────
 function detectarTipo(msg) {
   if (msg.imageMessage) return 'image'
