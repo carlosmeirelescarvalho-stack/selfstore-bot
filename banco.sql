@@ -80,3 +80,39 @@ FROM condominios WHERE nome = 'Adele Zarzur';
 -- Nome: selfstore
 -- Public bucket: SIM
 -- =====================================================
+
+-- =====================================================
+-- TABELA ADMINS WHATSAPP
+-- Adicione este bloco no Supabase SQL Editor e execute
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS admins_whatsapp (
+  id        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  celular   TEXT NOT NULL UNIQUE,
+  nome      TEXT,
+  ativo     BOOLEAN NOT NULL DEFAULT true,
+  criado_em TIMESTAMPTZ DEFAULT now()
+);
+
+-- Insira seu número como primeiro admin (substitua pelo número real)
+-- Formato: 55 + DDD + número (ex: 5511999999999)
+INSERT INTO admins_whatsapp (celular, nome) VALUES ('5511999999999', 'Admin Principal')
+ON CONFLICT (celular) DO NOTHING;
+
+-- =====================================================
+-- TABELA COMANDOS ESP32 / RASPBERRY PI (v23 — polling)
+-- O Raspberry Pi não pode ser chamado diretamente pela nuvem,
+-- então comandos de abrir/fechar geladeira são salvos aqui e
+-- buscados via polling pelo Pi (GET /esp32/comandos)
+-- =====================================================
+
+CREATE TABLE IF NOT EXISTS comandos_esp32 (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  geladeira_id UUID REFERENCES geladeiras(id),
+  acao        TEXT NOT NULL DEFAULT 'abrir',
+  status      TEXT NOT NULL DEFAULT 'pendente',
+  morador_id  UUID REFERENCES moradores(id),
+  criado_em   TIMESTAMPTZ DEFAULT now(),
+  executado_em TIMESTAMPTZ
+);
+ALTER TABLE comandos_esp32 DISABLE ROW LEVEL SECURITY;

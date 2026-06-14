@@ -181,7 +181,6 @@ async function uploadFoto(celular, buffer, mimetype) {
 }
 
 module.exports = {
-  getSupa: supabase,
   buscarMoradorPorCelular,
   buscarMoradorPorCPF,
   criarMorador,
@@ -271,4 +270,43 @@ Object.assign(module.exports, {
   listarMoradoresPorStatus,
   contarPendentes,
   buscarMoradorParaAcao,
+})
+
+// ─── COMANDOS ESP32 / RASPBERRY PI (polling) ──────────────────────
+
+async function criarComandoEsp32(geladeiraId, acao, moradorId) {
+  const { data, error } = await supabase()
+    .from('comandos_esp32')
+    .insert([{ geladeira_id: geladeiraId, acao, status: 'pendente', morador_id: moradorId }])
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+async function buscarComandoPendente(geladeiraId) {
+  const { data, error } = await supabase()
+    .from('comandos_esp32')
+    .select('*')
+    .eq('geladeira_id', geladeiraId)
+    .eq('status', 'pendente')
+    .order('criado_em', { ascending: true })
+    .limit(1)
+    .single()
+  if (error && error.code !== 'PGRST116') throw error
+  return data
+}
+
+async function marcarComandoExecutado(comandoId) {
+  const { error } = await supabase()
+    .from('comandos_esp32')
+    .update({ status: 'executado', executado_em: new Date().toISOString() })
+    .eq('id', comandoId)
+  if (error) throw error
+}
+
+Object.assign(module.exports, {
+  criarComandoEsp32,
+  buscarComandoPendente,
+  marcarComandoExecutado,
 })

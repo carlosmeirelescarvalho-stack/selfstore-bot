@@ -69,7 +69,16 @@ async function handleGeladeira(celular, mensagem) {
       }
     }
 
-    // 7. Enfileira o comando de abertura para o Raspberry Pi buscar via polling
+    // 6. Verifica se a geladeira está ativa
+    if (!geladeira.ativa) {
+      await enviarTexto(
+        celular,
+        `⚠️ Esta geladeira está desativada no momento. Informe o administrador.`
+      )
+      return
+    }
+
+    // 7. Cria comando pendente — o Raspberry Pi busca via polling e aciona o relé
     await abrirGeladeira(geladeira.id, morador.id)
 
     // 8. Confirma para o morador

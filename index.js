@@ -10,6 +10,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 const { handleGeladeira, isComandoGeladeira } = require('./geladeira')
 const { enviarTexto, MSG } = require('./whatsapp')
 const db = require('./db')
+const { ESP32_SECRET } = require('./esp32')
 
 // Busca imagem completa via Evolution API (evita thumbnail de baixa resolução)
 async function buscarImagemCompleta(messageId) {
@@ -369,7 +370,7 @@ app.post('/esp32/heartbeat', async (req, res) => {
   res.sendStatus(200)
   try {
     const secret = req.headers['x-esp32-secret']
-    if (secret !== (process.env.ESP32_SECRET || 'troque-por-uma-chave-secreta-forte')) return
+    if (secret !== ESP32_SECRET) return
     const { geladeira, ip, evento } = req.body
     if (!geladeira || !ip) return
     const supa = getSupa()
@@ -380,62 +381,42 @@ app.post('/esp32/heartbeat', async (req, res) => {
   }
 })
 
-// Raspberry Pi busca comandos pendentes via polling
+// GET /esp32/comandos — Raspberry Pi faz polling a cada 5s
 app.get('/esp32/comandos', async (req, res) => {
   try {
     const secret = req.headers['x-esp32-secret']
-    if (secret !== (process.env.ESP32_SECRET || 'troque-por-uma-chave-secreta-forte')) {
-      return res.sendStatus(401)
-    }
+    if (secret !== ESP32_SECRET) return res.status(401).json({ erro: 'unauthorized' })
+
     const { geladeira } = req.query
-    if (!geladeira) return res.json(null)
+    if (!geladeira) return res.json({})
 
-    const supa = getSupa()
-    const { data: gel } = await supa
-      .from('geladeiras')
-      .select('id')
-      .ilike('nome', '%' + geladeira.split('@')[0].trim() + '%')
-      .single()
-    if (!gel) return res.json(null)
+    const geladeiraObj = await db.buscarGeladeiraPorCodigo(geladeira)
+    if (!geladeiraObj) return res.json({})
 
-    const { data: comando } = await supa
-      .from('comandos_esp32')
-      .select('id, acao')
-      .eq('geladeira_id', gel.id)
-      .eq('status', 'pendente')
-      .order('criado_em', { ascending: true })
-      .limit(1)
-      .single()
-    if (!comando) return res.json(null)
-
-    await supa.from('comandos_esp32').update({ status: 'enviado' }).eq('id', comando.id)
+    const comando = await db.buscarComandoPendente(geladeiraObj.id)
+    if (!comando) return res.json({})
 
     res.json({ action: comando.acao, comando_id: comando.id })
   } catch (err) {
-    console.error('Erro /esp32/comandos:', err)
-    res.json(null)
+    console.error('Erro em /esp32/comandos:', err)
+    res.status(500).json({ erro: err.message })
   }
 })
 
-// Raspberry Pi confirma execução do comando
+// POST /esp32/comandos/ack — Raspberry Pi confirma execução do comando
 app.post('/esp32/comandos/ack', async (req, res) => {
   try {
     const secret = req.headers['x-esp32-secret']
-    if (secret !== (process.env.ESP32_SECRET || 'troque-por-uma-chave-secreta-forte')) {
-      return res.sendStatus(401)
-    }
+    if (secret !== ESP32_SECRET) return res.status(401).json({ erro: 'unauthorized' })
+
     const { comando_id } = req.body
-    if (!comando_id) return res.sendStatus(400)
+    if (!comando_id) return res.status(400).json({ erro: 'comando_id obrigatório' })
 
-    const supa = getSupa()
-    await supa.from('comandos_esp32')
-      .update({ status: 'executado', executado_em: new Date().toISOString() })
-      .eq('id', comando_id)
-
-    res.sendStatus(200)
+    await db.marcarComandoExecutado(comando_id)
+    res.json({ ok: true })
   } catch (err) {
-    console.error('Erro /esp32/comandos/ack:', err)
-    res.sendStatus(500)
+    console.error('Erro em /esp32/comandos/ack:', err)
+    res.status(500).json({ erro: err.message })
   }
 })
 

@@ -23,6 +23,9 @@ module.exports = {
   // Número do WhatsApp do sistema (sem + e sem espaços)
   BOT_NUMERO: process.env.BOT_NUMERO,
 
-  // Tempo que a geladeira fica aberta (ms)
-  GELADEIRA_TEMPO_ABERTA_MS: 30000,
+  // Tempo que a geladeira fica aberta (ms) — espelha TEMPO_ABERTA do geladeira.py
+  GELADEIRA_TEMPO_ABERTA_MS: 15000,
+
+  // Chave secreta compartilhada com o Raspberry Pi (polling)
+  ESP32_SECRET: process.env.ESP32_SECRET || 'troque-por-uma-chave-secreta-forte',
 }
