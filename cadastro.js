@@ -214,12 +214,12 @@ async function finalizarCadastro(celular, dados, imagemBase64) {
 
   if (autoAprovacao) {
     // 5a. Aprovação automática → cadastra no iDFace imediatamente
-    await enviarTexto(celular, MSG.cadastroAprovadoAuto(dados.nome))
+    try { await enviarTexto(celular, MSG.cadastroAprovadoAuto(dados.nome)) } catch(e) { console.error('Erro ao notificar aprovacao WhatsApp:', e.message) }
     await sincronizarComIDFace(morador, imagemBase64, condominio)
   } else {
     // 5b. Aprovação manual → notifica admin
-    await enviarTexto(celular, MSG.cadastroEnviado())
-    await notificarAdmin(
+    try { await enviarTexto(celular, MSG.cadastroEnviado()) } catch(e) { console.error('Erro ao notificar cadastro WhatsApp:', e.message) }
+    try { await notificarAdmin(
       `👤 *Novo cadastro pendente*\n\n` +
       `Nome: ${dados.nome}\n` +
       `CPF: ${dados.cpf}\n` +
@@ -227,7 +227,7 @@ async function finalizarCadastro(celular, dados, imagemBase64) {
       `Bloco: ${dados.bloco} • Unidade: ${dados.unidade}\n` +
       `Celular: ${celular}\n\n` +
       `Acesse o painel para aprovar ou rejeitar.`
-    )
+    ) } catch(e) { console.error('Erro ao notificar admin WhatsApp:', e.message) }
   }
 }
 
