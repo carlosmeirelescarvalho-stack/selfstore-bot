@@ -1,26 +1,48 @@
-// esp32.js — gerencia comandos para o Raspberry Pi via polling (v23)
-//
-// O servidor roda na nuvem (Railway) e o Raspberry Pi está em rede local,
-// então não é possível chamar o Pi diretamente. Em vez disso, o comando é
-// salvo na tabela `comandos_esp32` e o Pi busca via polling (GET /esp32/comandos)
-// a cada poucos segundos, executando o relé e confirmando via ACK.
+// esp32.js — aciona geladeira via HTTP no ESP32
 
 const config = require('./config')
-const db = require('./db')
 
-// Chave secreta compartilhada com o Raspberry Pi
-const ESP32_SECRET = config.ESP32_SECRET
+// Chave secreta compartilhada com o ESP32
+const ESP32_SECRET = process.env.ESP32_SECRET || 'troque-por-uma-chave-secreta-forte'
 
-// Cria um comando pendente de abertura para a geladeira
-async function abrirGeladeira(geladeiraId, moradorId) {
-  await db.criarComandoEsp32(geladeiraId, 'abrir', moradorId)
+// Envia comando de abertura para o ESP32 da geladeira
+async function abrirGeladeira(esp32Ip) {
+  const url = `http://${esp32Ip}/abrir`
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'X-ESP32-Secret': ESP32_SECRET,
+      'Content-Type': 'application/json',
+    },
+    signal: AbortSignal.timeout(5000),
+  })
+
+  if (!res.ok) throw new Error(`ESP32 respondeu com erro: ${res.status}`)
   return true
 }
 
-// Cria um comando pendente de fechamento (uso manual via admin)
-async function fecharGeladeira(geladeiraId, moradorId) {
-  await db.criarComandoEsp32(geladeiraId, 'fechar', moradorId)
+// Fecha a geladeira manualmente (admin)
+async function fecharGeladeira(esp32Ip) {
+  const res = await fetch(`http://${esp32Ip}/fechar`, {
+    method: 'POST',
+    headers: { 'X-ESP32-Secret': ESP32_SECRET },
+    signal: AbortSignal.timeout(5000),
+  })
+  if (!res.ok) throw new Error(`ESP32 fechar erro: ${res.status}`)
   return true
 }
 
-module.exports = { abrirGeladeira, fecharGeladeira, ESP32_SECRET }
+// Testa conectividade com o ESP32 (usado no painel admin)
+async function testarConexaoESP32(esp32Ip) {
+  try {
+    const res = await fetch(`http://${esp32Ip}/status`, {
+      signal: AbortSignal.timeout(3000),
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
+module.exports = { abrirGeladeira, fecharGeladeira, testarConexaoESP32 }

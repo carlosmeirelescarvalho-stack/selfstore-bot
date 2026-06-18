@@ -10,7 +10,6 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 const { handleGeladeira, isComandoGeladeira } = require('./geladeira')
 const { enviarTexto, MSG } = require('./whatsapp')
 const db = require('./db')
-const { ESP32_SECRET } = require('./esp32')
 
 // Busca imagem completa via Evolution API (evita thumbnail de baixa resolução)
 async function buscarImagemCompleta(messageId) {
@@ -370,7 +369,7 @@ app.post('/esp32/heartbeat', async (req, res) => {
   res.sendStatus(200)
   try {
     const secret = req.headers['x-esp32-secret']
-    if (secret !== ESP32_SECRET) return
+    if (secret !== (process.env.ESP32_SECRET || 'troque-por-uma-chave-secreta-forte')) return
     const { geladeira, ip, evento } = req.body
     if (!geladeira || !ip) return
     const supa = getSupa()
@@ -378,45 +377,6 @@ app.post('/esp32/heartbeat', async (req, res) => {
     console.log('ESP32 heartbeat:', geladeira, 'IP:', ip, evento)
   } catch (err) {
     console.error('Erro heartbeat ESP32:', err)
-  }
-})
-
-// GET /esp32/comandos — Raspberry Pi faz polling a cada 5s
-app.get('/esp32/comandos', async (req, res) => {
-  try {
-    const secret = req.headers['x-esp32-secret']
-    if (secret !== ESP32_SECRET) return res.status(401).json({ erro: 'unauthorized' })
-
-    const { geladeira } = req.query
-    if (!geladeira) return res.json({})
-
-    const geladeiraObj = await db.buscarGeladeiraPorCodigo(geladeira)
-    if (!geladeiraObj) return res.json({})
-
-    const comando = await db.buscarComandoPendente(geladeiraObj.id)
-    if (!comando) return res.json({})
-
-    res.json({ action: comando.acao, comando_id: comando.id })
-  } catch (err) {
-    console.error('Erro em /esp32/comandos:', err)
-    res.status(500).json({ erro: err.message })
-  }
-})
-
-// POST /esp32/comandos/ack — Raspberry Pi confirma execução do comando
-app.post('/esp32/comandos/ack', async (req, res) => {
-  try {
-    const secret = req.headers['x-esp32-secret']
-    if (secret !== ESP32_SECRET) return res.status(401).json({ erro: 'unauthorized' })
-
-    const { comando_id } = req.body
-    if (!comando_id) return res.status(400).json({ erro: 'comando_id obrigatório' })
-
-    await db.marcarComandoExecutado(comando_id)
-    res.json({ ok: true })
-  } catch (err) {
-    console.error('Erro em /esp32/comandos/ack:', err)
-    res.status(500).json({ erro: err.message })
   }
 })
 
