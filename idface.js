@@ -1,9 +1,14 @@
 // idface.js — integração com iDFace Pro via API REST
 // Baseado na documentação oficial: controlid.com.br/docs/access-api-en/
 
-// Detecta protocolo: URLs com domínio usam https, IPs locais usam http
+// Retorna base URL do iDFace — aceita IP local, domínio ou URL completa
 function getProtocol(ip) {
   return (ip.includes('.com') || ip.includes('.net') || ip.includes('.org')) ? 'https' : 'http'
+}
+
+function getBaseUrl(ip) {
+  if (ip.startsWith('http://') || ip.startsWith('https://')) return ip.replace(/\/$/, '')
+  return `${getProtocol(ip)}://${ip}`
 }
 
 // Converte CPF para número inteiro (iDFace exige int64 no campo id)
@@ -15,8 +20,8 @@ function cpfParaInt(cpf) {
 // ─── LOGIN ────────────────────────────────────────────────────────
 // POST /login.fcgi
 async function loginIDFace(ip, senha, usuario = 'admin') {
-  const proto = getProtocol(ip)
-  const res = await fetch(`${proto}://${ip}/login.fcgi`, {
+  const base = getBaseUrl(ip)
+  const res = await fetch(`${base}/login.fcgi`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ login: usuario, password: senha }),
@@ -32,12 +37,12 @@ async function loginIDFace(ip, senha, usuario = 'admin') {
 // 1. Cria usuário via create_objects (se não existir)
 // 2. Envia foto via user_set_image.fcgi com Content-Type: application/octet-stream
 async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64, usuario = 'admin') {
-  const proto = getProtocol(ip)
+  const base = getBaseUrl(ip)
   const session = await loginIDFace(ip, senha, usuario)
   const userId = cpfParaInt(morador.cpf)
 
   // 1. Verifica se usuário já existe
-  const resCheck = await fetch(`${proto}://${ip}/load_objects.fcgi?session=${session}`, {
+  const resCheck = await fetch(`${base}/load_objects.fcgi?session=${session}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -50,7 +55,7 @@ async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64, usuario = 'a
 
   if (!usuarioExiste) {
     // 2a. Cria o usuário (id como int64, registration e name como strings)
-    const resUser = await fetch(`${proto}://${ip}/create_objects.fcgi?session=${session}`, {
+    const resUser = await fetch(`${base}/create_objects.fcgi?session=${session}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -68,7 +73,7 @@ async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64, usuario = 'a
     }
   } else {
     // 2b. Atualiza nome do usuário existente via modify_objects
-    await fetch(`${proto}://${ip}/modify_objects.fcgi?session=${session}`, {
+    await fetch(`${base}/modify_objects.fcgi?session=${session}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -86,7 +91,7 @@ async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64, usuario = 'a
   const timestamp = Math.floor(Date.now() / 1000)
 
   const resFoto = await fetch(
-    `${proto}://${ip}/user_set_image.fcgi?user_id=${userId}&timestamp=${timestamp}&match=0&session=${session}`,
+    `${base}/user_set_image.fcgi?user_id=${userId}&timestamp=${timestamp}&match=0&session=${session}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/octet-stream' },
@@ -106,7 +111,7 @@ async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64, usuario = 'a
   // 4. Vincula regra de acesso padrão (id=1 = sempre liberado)
   // Necessário para que o usuário tenha acesso autorizado pelo iDFace
   try {
-    await fetch(`${proto}://${ip}/create_objects.fcgi?session=${session}`, {
+    await fetch(`${base}/create_objects.fcgi?session=${session}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -130,19 +135,19 @@ async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64, usuario = 'a
 // ─── REMOVER USUÁRIO ──────────────────────────────────────────────
 // Remove foto e depois o usuário
 async function removerUsuarioIDFace(ip, senha, moradorCpf, usuario = 'admin') {
-  const proto = getProtocol(ip)
+  const base = getBaseUrl(ip)
   const session = await loginIDFace(ip, senha, usuario)
   const userId = cpfParaInt(moradorCpf)
 
   // 1. Remove foto via user_destroy_image.fcgi
-  await fetch(`${proto}://${ip}/user_destroy_image.fcgi?session=${session}`, {
+  await fetch(`${base}/user_destroy_image.fcgi?session=${session}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ user_id: userId }),
   })
 
   // 2. Remove o usuário via destroy_objects
-  const res = await fetch(`${proto}://${ip}/destroy_objects.fcgi?session=${session}`, {
+  const res = await fetch(`${base}/destroy_objects.fcgi?session=${session}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -157,10 +162,10 @@ async function removerUsuarioIDFace(ip, senha, moradorCpf, usuario = 'admin') {
 // ─── ABRIR PORTA ─────────────────────────────────────────────────
 // POST /execute_actions.fcgi — action: 'door', parameters: 'door=1'
 async function abrirPortaIDFace(ip, senha, usuario = 'admin') {
-  const proto = getProtocol(ip)
+  const base = getBaseUrl(ip)
   const session = await loginIDFace(ip, senha, usuario)
 
-  const res = await fetch(`${proto}://${ip}/execute_actions.fcgi?session=${session}`, {
+  const res = await fetch(`${base}/execute_actions.fcgi?session=${session}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
