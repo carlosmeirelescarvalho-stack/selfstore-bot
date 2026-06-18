@@ -214,7 +214,7 @@ app.patch('/admin/moradores/:id', async (req, res) => {
       // enviarTexto, cadastrarRostoIDFace, urlParaBase64 já importados no topo
 
       if (status === 'aprovado') {
-        await enviarTexto(morador.celular_whatsapp, MSG.cadastroAprovadoAuto(morador.nome))
+        try { await enviarTexto(morador.celular_whatsapp, MSG.cadastroAprovadoAuto(morador.nome)) } catch(e) { console.error('Erro ao notificar morador WhatsApp:', e.message) }
 
         // Sincroniza rosto com iDFace se tiver foto
         if (morador.foto_url) {
@@ -234,7 +234,7 @@ app.patch('/admin/moradores/:id', async (req, res) => {
           }
         }
       } else if (status === 'rejeitado') {
-        await enviarTexto(morador.celular_whatsapp, MSG.acessoNegadoRejeitado())
+        try { await enviarTexto(morador.celular_whatsapp, MSG.acessoNegadoRejeitado()) } catch(e) { console.error('Erro ao notificar rejeicao WhatsApp:', e.message) }
       }
     }
   } catch (err) { res.status(500).json({ erro: err.message }) }
