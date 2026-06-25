@@ -1,22 +1,22 @@
-// services/whatsapp.js — envia mensagens via Evolution API
+// services/whatsapp.js — envia mensagens via Meta Cloud API (WhatsApp oficial)
 
 const config = require('./config')
 
-const BASE = () => `${config.EVOLUTION_API_URL}/message`
-const HEADERS = () => ({
-  'Content-Type': 'application/json',
-  apikey: config.EVOLUTION_API_KEY,
-})
-const INSTANCE = () => config.EVOLUTION_INSTANCE
+const GRAPH_URL = 'https://graph.facebook.com/v21.0'
 
 // Envia mensagem de texto simples
 async function enviarTexto(celular, texto) {
-  const res = await fetch(`${BASE()}/sendText/${INSTANCE()}`, {
+  const res = await fetch(`${GRAPH_URL}/${config.META_PHONE_NUMBER_ID}/messages`, {
     method: 'POST',
-    headers: HEADERS(),
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${config.META_ACCESS_TOKEN}`,
+    },
     body: JSON.stringify({
-      number: celular,
-      text: texto,
+      messaging_product: 'whatsapp',
+      to: celular,
+      type: 'text',
+      text: { body: texto },
     }),
   })
   if (!res.ok) {
@@ -41,6 +41,30 @@ async function transferirParaHumano(celular, nomeMorador) {
   await notificarAdmin(
     `📲 *Solicitação de ajuste de cadastro*\n\nMorador: ${nomeMorador || 'não identificado'}\nCelular: ${celular}\n\nAcesse o painel para ver o cadastro e responda neste chat.`
   )
+}
+
+// Busca imagem da Meta API pelo media_id
+async function buscarImagemMeta(mediaId) {
+  try {
+    // 1. Obtém a URL da mídia
+    const resMeta = await fetch(`${GRAPH_URL}/${mediaId}`, {
+      headers: { 'Authorization': `Bearer ${config.META_ACCESS_TOKEN}` },
+    })
+    if (!resMeta.ok) return null
+    const { url } = await resMeta.json()
+    if (!url) return null
+
+    // 2. Faz download da imagem
+    const resImg = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${config.META_ACCESS_TOKEN}` },
+    })
+    if (!resImg.ok) return null
+    const buffer = await resImg.arrayBuffer()
+    return Buffer.from(buffer).toString('base64')
+  } catch(e) {
+    console.error('Erro ao buscar imagem Meta:', e.message)
+    return null
+  }
 }
 
 // Mensagens prontas reutilizáveis
@@ -121,4 +145,4 @@ const MSG = {
     `🤔 Não entendi sua mensagem.\n\nPara abrir uma geladeira, aponte a câmera para o *QR Code*.\nPara se cadastrar, envie *OI* ou *CADASTRO*.`,
 }
 
-module.exports = { enviarTexto, notificarAdmin, transferirParaHumano, MSG }
+module.exports = { enviarTexto, notificarAdmin, transferirParaHumano, buscarImagemMeta, MSG }

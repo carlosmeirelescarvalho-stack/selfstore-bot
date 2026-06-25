@@ -10,10 +10,10 @@ module.exports = {
   SUPABASE_URL: process.env.SUPABASE_URL,
   SUPABASE_KEY: process.env.SUPABASE_KEY,
 
-  // Evolution API
-  EVOLUTION_API_URL: process.env.EVOLUTION_API_URL,   // ex: https://sua-evolution.railway.app
-  EVOLUTION_API_KEY: process.env.EVOLUTION_API_KEY,
-  EVOLUTION_INSTANCE: process.env.EVOLUTION_INSTANCE || 'selfstore',
+  // Meta Cloud API (WhatsApp oficial)
+  META_ACCESS_TOKEN: process.env.META_ACCESS_TOKEN,
+  META_PHONE_NUMBER_ID: process.env.META_PHONE_NUMBER_ID,
+  META_WEBHOOK_VERIFY_TOKEN: process.env.META_WEBHOOK_VERIFY_TOKEN || 'selfstore_webhook_meta_2026',
 
   // iDFace (por condomínio — configurado no painel admin)
   // IPs e senhas ficam no banco, não aqui

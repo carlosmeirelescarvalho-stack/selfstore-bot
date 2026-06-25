@@ -8,34 +8,9 @@ const { previewPlanilha, importarPlanilha, cadastrarManual } = require('./import
 const multer = require('multer')
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } })
 const { handleGeladeira, isComandoGeladeira } = require('./geladeira')
-const { enviarTexto, MSG } = require('./whatsapp')
+const { enviarTexto, buscarImagemMeta, MSG } = require('./whatsapp')
 const db = require('./db')
 
-// Busca imagem completa via Evolution API (evita thumbnail de baixa resolução)
-async function buscarImagemCompleta(messageId) {
-  try {
-    const res = await fetch(
-      `${process.env.EVOLUTION_API_URL}/chat/getBase64FromMediaMessage/${process.env.EVOLUTION_INSTANCE}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': process.env.EVOLUTION_API_KEY,
-        },
-        body: JSON.stringify({
-          message: { key: { id: messageId } },
-          convertToMp4: false,
-        }),
-      }
-    )
-    if (!res.ok) return null
-    const data = await res.json()
-    return data.base64 || null
-  } catch(e) {
-    console.error('Erro ao buscar imagem completa:', e.message)
-    return null
-  }
-}
 
 // Helper Supabase com ws (evita erro de WebSocket no Node 20)
 const ws = require('ws')
@@ -56,58 +31,60 @@ app.use((req, res, next) => {
   next()
 }) // imagens chegam em base64
 
-// ─── WEBHOOK — recebe mensagens do WhatsApp via Evolution API ─────
-app.post('/webhook', async (req, res) => {
-  // Responde imediatamente — Evolution API não aguarda processamento
+// ─── WEBHOOK — Meta Cloud API ─────────────────────────────────────
+
+// GET — verificação do webhook pela Meta
+app.get('/webhook/whatsapp', (req, res) => {
+  const mode = req.query['hub.mode']
+  const token = req.query['hub.verify_token']
+  const challenge = req.query['hub.challenge']
+  if (mode === 'subscribe' && token === config.META_WEBHOOK_VERIFY_TOKEN) {
+    console.log('Webhook Meta verificado com sucesso')
+    return res.status(200).send(challenge)
+  }
+  res.sendStatus(403)
+})
+
+// POST — recebe mensagens do WhatsApp via Meta Cloud API
+app.post('/webhook/whatsapp', async (req, res) => {
   res.sendStatus(200)
-
   try {
-    const evento = req.body
+    const body = req.body
+    if (body.object !== 'whatsapp_business_account') return
 
-    // Filtra apenas mensagens recebidas (ignora status, notificações internas)
-    if (evento.event !== 'messages.upsert') return
-    const msg = evento.data?.message
-    if (!msg) return
+    for (const entry of body.entry || []) {
+      for (const change of entry.changes || []) {
+        if (change.field !== 'messages') continue
+        const value = change.value
+        const messages = value?.messages
+        if (!messages?.length) continue
 
-    // Ignora mensagens enviadas pelo próprio bot
-    if (evento.data?.key?.fromMe) return
+        for (const msg of messages) {
+          await processarMensagemMeta(msg, value)
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Erro no webhook Meta:', err)
+  }
+})
 
-    // Extrai dados da mensagem
-    const celular = evento.data?.key?.remoteJid?.replace('@s.whatsapp.net', '')
+async function processarMensagemMeta(msg, value) {
+  try {
+    const celular = msg.from
     if (!celular) return
-
-    // Ignora grupos
-    if (celular.includes('@g.us')) return
 
     const tipoMensagem = detectarTipo(msg)
     const textoMensagem = extrairTexto(msg, tipoMensagem)
-    // Extrai imagem em resolução completa via Evolution API
-    // O jpegThumbnail é uma miniatura — precisamos buscar a imagem original
+
     let imagemBase64 = null
-    let messageId = null
     if (tipoMensagem === 'image') {
-      messageId = evento.data?.key?.id || null
-      if (messageId) {
-        // Busca imagem completa (mínimo 160x160 exigido pelo iDFace)
-        imagemBase64 = await buscarImagemCompleta(messageId)
-      }
-      // Fallback: tenta o thumbnail se não conseguiu a imagem completa
-      if (!imagemBase64) {
-        const thumb = msg.imageMessage?.jpegThumbnail
-        if (thumb) {
-          if (typeof thumb === 'string') imagemBase64 = thumb
-          else if (thumb instanceof Uint8Array || Buffer.isBuffer(thumb)) {
-            imagemBase64 = Buffer.from(thumb).toString('base64')
-          } else if (typeof thumb === 'object') {
-            try { imagemBase64 = Buffer.from(Object.values(thumb)).toString('base64') } catch(e) {}
-          }
-        }
-      }
+      const mediaId = msg.image?.id
+      if (mediaId) imagemBase64 = await buscarImagemMeta(mediaId)
     }
 
     // ── ROTEAMENTO ──────────────────────────────────────────────
 
-    // Verifica se é admin com sessão ativa ou digitou ADMIN
     const adminAutorizado = await isAdmin(celular)
     if (adminAutorizado) {
       const sessaoAdmin = await db.buscarSessao('admin_' + celular)
@@ -118,23 +95,17 @@ app.post('/webhook', async (req, res) => {
       }
     }
 
-    // ── PRIORIDADE 1: sessão de cadastro ativa — continua sempre ──
-    // Deve ser verificada ANTES de qualquer outro roteamento
-    // para evitar que respostas numéricas (1, 2, etc.) sejam
-    // interceptadas por outros handlers durante o fluxo de cadastro
     const sessaoAtiva = await db.buscarSessao(celular)
     if (sessaoAtiva || tipoMensagem === 'image') {
       await handleCadastro(celular, textoMensagem, tipoMensagem, imagemBase64)
       return
     }
 
-    // ── PRIORIDADE 2: comando de abertura de geladeira (QR Code) ──
     if (tipoMensagem === 'text' && isComandoGeladeira(textoMensagem)) {
       await handleGeladeira(celular, textoMensagem)
       return
     }
 
-    // ── PRIORIDADE 3: palavras-chave para iniciar cadastro ──
     const textUpper = textoMensagem.toUpperCase().trim()
     const isCadastro = ['2', 'CADASTRO', 'CADASTRAR', 'OI', 'OLÁ', 'OLA', 'INICIO', 'INÍCIO', 'START']
       .includes(textUpper)
@@ -144,22 +115,16 @@ app.post('/webhook', async (req, res) => {
       return
     }
 
-    // ── PRIORIDADE 4: opção 1 do menu — instrução do QR Code ──
     if (textUpper === '1') {
-      await enviarTexto(
-        celular,
-        `📷 Para abrir a geladeira, aponte a câmera do seu celular para o *QR Code* colado na geladeira.\n\nÉ rápido e simples! 😊`
-      )
+      await enviarTexto(celular, `📷 Para abrir a geladeira, aponte a câmera do seu celular para o *QR Code* colado na geladeira.\n\nÉ rápido e simples! 😊`)
       return
     }
 
-    // Mensagem não reconhecida — exibe menu geral
     await enviarTexto(celular, MSG.naoEntendido())
-
   } catch (err) {
-    console.error('Erro no webhook:', err)
+    console.error('Erro ao processar mensagem Meta:', err)
   }
-})
+}
 
 // ─── WEBHOOK DO iDFace — recebe eventos de acesso facial ──────────
 app.post('/webhook/idface', async (req, res) => {
@@ -382,19 +347,17 @@ app.post('/esp32/heartbeat', async (req, res) => {
 
 // ─── HELPERS ──────────────────────────────────────────────────────
 function detectarTipo(msg) {
-  if (msg.imageMessage) return 'image'
-  if (msg.documentMessage) return 'document'
-  if (msg.audioMessage) return 'audio'
-  if (msg.videoMessage) return 'video'
+  const tipo = msg.type
+  if (tipo === 'image') return 'image'
+  if (tipo === 'document') return 'document'
+  if (tipo === 'audio') return 'audio'
+  if (tipo === 'video') return 'video'
   return 'text'
 }
 
 function extrairTexto(msg, tipo) {
-  if (tipo === 'text') {
-    return msg.conversation || msg.extendedTextMessage?.text || ''
-  }
-  // Para imagens, pode vir legenda
-  if (tipo === 'image') return msg.imageMessage?.caption || ''
+  if (tipo === 'text') return msg.text?.body || ''
+  if (tipo === 'image') return msg.image?.caption || ''
   return ''
 }
 
