@@ -329,7 +329,7 @@ async function processarCadastroAdmin(celular, texto, tipoMensagem, imagemBase64
     const [dia, mes, ano] = dados.data_nasc.split('/')
     const dataNascISO = `${ano}-${mes.padStart(2,'0')}-${dia.padStart(2,'0')}`
 
-    await db.criarMorador({
+    const moradorCriado = await db.criarMorador({
       nome: dados.nome,
       cpf: dados.cpf,
       data_nasc: dataNascISO,
@@ -342,6 +342,23 @@ async function processarCadastroAdmin(celular, texto, tipoMensagem, imagemBase64
       status: 'aprovado',
       criado_em: new Date().toISOString(),
     })
+
+    // Sincroniza com iDFace se tiver foto
+    if (fotoUrl && dados.condominio_id) {
+      try {
+        const condominios = await db.listarCondominios()
+        const { createClient } = require('@supabase/supabase-js')
+        const ws = require('ws')
+        const supa = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, { realtime: { transport: ws } })
+        const { data: cond } = await supa.from('condominios').select('*').eq('id', dados.condominio_id).single()
+        if (cond?.idface_ip) {
+          const { cadastrarRostoIDFace, urlParaBase64 } = require('./idface')
+          const fb64 = await urlParaBase64(fotoUrl)
+          await cadastrarRostoIDFace(cond.idface_ip, cond.idface_senha, moradorCriado, fb64, cond.idface_user || 'admin')
+          console.log('iDFace sync via admin cadastro:', dados.nome)
+        }
+      } catch(e) { console.error('Erro iDFace sync admin cadastro:', e.message) }
+    }
 
     await db.deletarSessao(`admin_${celular}`)
 

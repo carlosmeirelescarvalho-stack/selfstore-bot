@@ -21,6 +21,9 @@ function calcularIdade(dataNasc) {
   if (typeof dataNasc === 'string' && dataNasc.includes('/')) {
     const [dia, mes, ano] = dataNasc.split('/')
     nasc = new Date(parseInt(ano), parseInt(mes) - 1, parseInt(dia))
+  } else if (typeof dataNasc === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dataNasc)) {
+    const [ano, mes, dia] = dataNasc.split('-')
+    nasc = new Date(parseInt(ano), parseInt(mes) - 1, parseInt(dia))
   } else {
     nasc = new Date(dataNasc)
   }

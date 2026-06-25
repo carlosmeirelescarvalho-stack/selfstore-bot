@@ -8,7 +8,7 @@ const { previewPlanilha, importarPlanilha, cadastrarManual } = require('./import
 const multer = require('multer')
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } })
 const { handleGeladeira, isComandoGeladeira } = require('./geladeira')
-const { enviarTexto, buscarImagemMeta, MSG } = require('./whatsapp')
+const { enviarTexto, buscarImagemMeta, transferirParaHumano, MSG } = require('./whatsapp')
 const db = require('./db')
 
 
@@ -96,7 +96,7 @@ async function processarMensagemMeta(msg, value) {
     }
 
     const sessaoAtiva = await db.buscarSessao(celular)
-    if (sessaoAtiva || tipoMensagem === 'image') {
+    if (sessaoAtiva) {
       await handleCadastro(celular, textoMensagem, tipoMensagem, imagemBase64)
       return
     }
@@ -117,6 +117,11 @@ async function processarMensagemMeta(msg, value) {
 
     if (textUpper === '1') {
       await enviarTexto(celular, `📷 Para abrir a geladeira, aponte a câmera do seu celular para o *QR Code* colado na geladeira.\n\nÉ rápido e simples! 😊`)
+      return
+    }
+
+    if (textUpper === 'AJUDA') {
+      await transferirParaHumano(celular, null)
       return
     }
 

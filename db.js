@@ -77,6 +77,12 @@ async function buscarSessao(celular) {
     .eq('celular', celular)
     .single()
   if (error && error.code !== 'PGRST116') throw error
+  if (!data) return null
+  const idade = Date.now() - new Date(data.atualizado_em).getTime()
+  if (idade > 24 * 60 * 60 * 1000) {
+    await deletarSessao(celular)
+    return null
+  }
   return data
 }
 
