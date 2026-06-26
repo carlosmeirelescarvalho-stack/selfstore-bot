@@ -381,6 +381,18 @@ tr:hover td{background:var(--bg)}
           <div class="loading"><div class="spinner"></div>Carregando...</div>
         </div>
       </div>
+      <div class="card" id="card-blocos" style="display:none">
+        <div class="card-header">
+          <span class="card-title" id="blocos-title">Blocos</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input class="form-input" id="novo-bloco-nome" type="text" placeholder="Nome do bloco" style="width:160px;padding:5px 10px;font-size:12px">
+            <button class="btn btn-sm btn-primary" onclick="adicionarBloco()"><i class="ti ti-plus"></i>Adicionar</button>
+          </div>
+        </div>
+        <div class="card-body" id="blocos-lista">
+          <div class="empty"><i class="ti ti-building"></i><p>Selecione um condomínio</p></div>
+        </div>
+      </div>
     </div>
 
     <!-- ADMINS -->
@@ -653,7 +665,7 @@ async function carregarMoradores(busca='') {
     el.innerHTML='<div class="empty"><i class="ti ti-users"></i><p>Nenhum morador encontrado</p></div>'; return
   }
   el.innerHTML = `<div class="table-wrap"><table>
-    <thead><tr><th>Morador</th><th>Unidade</th><th>Status</th><th>Ações</th></tr></thead>
+    <thead><tr><th>Morador</th><th>Unidade</th><th>Status</th><th>T&C</th><th>Ações</th></tr></thead>
     <tbody>${moradores.map(m => `
       <tr>
         <td><div style="display:flex;align-items:center;gap:8px">
@@ -664,6 +676,7 @@ async function carregarMoradores(busca='') {
         <td><div>${m.condominios?.nome||'—'}</div>
           <div class="td-meta">${m.bloco} • Apto ${m.unidade}</div></td>
         <td><span class="badge badge-${m.status}">${{pendente:'Pendente',aprovado:'Aprovado',rejeitado:'Rejeitado'}[m.status]}</span></td>
+        <td><span class="badge ${m.aceite_tc?'badge-approved':'badge-pending'}" style="font-size:10px">${m.aceite_tc?'Aceito':'Pendente'}</span></td>
         <td><div class="td-actions">
           ${m.status!=='aprovado'?`<button class="btn btn-sm btn-success" onclick="aprovar('${m.id}','${m.nome}')"><i class="ti ti-check"></i></button>`:''}
           ${m.status!=='rejeitado'?`<button class="btn btn-sm btn-danger" onclick="rejeitar('${m.id}')"><i class="ti ti-x"></i></button>`:''}
@@ -822,20 +835,54 @@ async function carregarCondominios() {
   const data = await api('/admin/condominios').catch(()=>({condominios:[]}))
   condominiosCache = data.condominios || []
 }
+let blocoCondId = null
 async function carregarCondominios2() {
   const el = document.getElementById('condominios-lista')
   if(!condominiosCache.length) { el.innerHTML='<div class="empty"><p>Nenhum condomínio</p></div>'; return }
   el.innerHTML = condominiosCache.map(c=>`
     <div class="toggle-row">
-      <div>
+      <div style="flex:1">
         <div style="font-weight:500">${c.nome}</div>
         <div style="font-size:11px;color:var(--muted)">iDFace: ${c.idface_ip||'não configurado'}</div>
       </div>
+      <button class="btn btn-sm btn-secondary" onclick="verBlocos('${c.id}','${c.nome}')" style="margin-right:10px">
+        <i class="ti ti-building"></i>Blocos
+      </button>
       <label class="toggle">
         <input type="checkbox" ${c.flag_auto_aprovacao?'checked':''} onchange="toggleAutoAprov('${c.id}',this.checked)">
         <span class="slider"></span>
       </label>
     </div>`).join('')
+}
+async function verBlocos(condId, condNome) {
+  blocoCondId = condId
+  document.getElementById('card-blocos').style.display='block'
+  document.getElementById('blocos-title').textContent = 'Blocos — ' + condNome
+  const { blocos } = await api('/admin/blocos/' + condId).catch(()=>({blocos:[]}))
+  const el = document.getElementById('blocos-lista')
+  if(!blocos||blocos.length===0) {
+    el.innerHTML='<div class="empty" style="padding:16px"><i class="ti ti-building"></i><p>Nenhum bloco cadastrado</p></div>'; return
+  }
+  el.innerHTML = blocos.map(b=>`
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+      <span style="font-size:13px">${b.nome}</span>
+      <button class="btn btn-sm btn-danger" onclick="removerBloco('${b.id}')"><i class="ti ti-trash"></i></button>
+    </div>`).join('')
+}
+async function adicionarBloco() {
+  if(!blocoCondId) return
+  const nome = document.getElementById('novo-bloco-nome').value.trim()
+  if(!nome) { alert('Informe o nome do bloco'); return }
+  await api('/admin/blocos', {method:'POST', body:JSON.stringify({condominio_id:blocoCondId, nome})})
+  document.getElementById('novo-bloco-nome').value = ''
+  notif('Bloco adicionado!')
+  verBlocos(blocoCondId, document.getElementById('blocos-title').textContent.replace('Blocos — ',''))
+}
+async function removerBloco(id) {
+  if(!confirm('Remover este bloco?')) return
+  await api('/admin/blocos/' + id, {method:'DELETE'})
+  notif('Bloco removido.')
+  verBlocos(blocoCondId, document.getElementById('blocos-title').textContent.replace('Blocos — ',''))
 }
 async function toggleAutoAprov(id, val) {
   await api(`/admin/condominios/${id}`, {method:'PATCH', body:JSON.stringify({flag_auto_aprovacao:val})})

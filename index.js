@@ -407,6 +407,33 @@ app.get('/admin/condominios', async (req, res) => {
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
+// ── BLOCOS ──
+app.get('/admin/blocos/:condominioId', async (req, res) => {
+  try {
+    const blocos = await db.listarBlocosPorCondominio(req.params.condominioId)
+    res.json({ blocos })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+app.post('/admin/blocos', async (req, res) => {
+  try {
+    const { condominio_id, nome } = req.body
+    const supa = getSupa()
+    const { data, error } = await supa.from('blocos').insert([{ condominio_id, nome }]).select().single()
+    if (error) throw error
+    res.json({ bloco: data })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+app.delete('/admin/blocos/:id', async (req, res) => {
+  try {
+    const supa = getSupa()
+    const { error } = await supa.from('blocos').delete().eq('id', req.params.id)
+    if (error) throw error
+    res.json({ ok: true })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
 app.patch('/admin/condominios/:id', async (req, res) => {
   try {
     const supa = getSupa()
