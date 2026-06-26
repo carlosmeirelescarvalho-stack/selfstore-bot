@@ -59,6 +59,14 @@ async function atualizarStatusMorador(id, status) {
   return data
 }
 
+async function atualizarAceiteTCMorador(id) {
+  const { error } = await supabase()
+    .from('moradores')
+    .update({ aceite_tc: true, atualizado_em: new Date().toISOString() })
+    .eq('id', id)
+  if (error) throw error
+}
+
 async function atualizarFotoMorador(id, fotoUrl) {
   const { error } = await supabase()
     .from('moradores')
@@ -67,8 +75,7 @@ async function atualizarFotoMorador(id, fotoUrl) {
   if (error) throw error
 }
 
-// ─── SESSÕES DE CADASTRO ──────────────────────────────────────────
-// Guardam o estado da conversa enquanto o morador está preenchendo dados
+// ─── SESSÕES ──────────────────────────────────────────────────────
 
 async function buscarSessao(celular) {
   const { data, error } = await supabase()
@@ -77,6 +84,12 @@ async function buscarSessao(celular) {
     .eq('celular', celular)
     .single()
   if (error && error.code !== 'PGRST116') throw error
+  if (!data) return null
+  const idade = Date.now() - new Date(data.atualizado_em).getTime()
+  if (idade > 24 * 60 * 60 * 1000) {
+    await deletarSessao(celular)
+    return null
+  }
   return data
 }
 
@@ -101,6 +114,17 @@ async function deletarSessao(celular) {
   if (error) throw error
 }
 
+// Busca sessoes abandonadas do dia anterior (para cron diario)
+async function buscarSessoesAbandonadas() {
+  const ontem = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
+  const { data, error } = await supabase()
+    .from('sessoes_cadastro')
+    .select('celular')
+    .lt('atualizado_em', ontem)
+  if (error) return []
+  return data || []
+}
+
 // ─── CONDOMÍNIOS ──────────────────────────────────────────────────
 
 async function buscarCondominioPorNome(nome) {
@@ -116,17 +140,31 @@ async function buscarCondominioPorNome(nome) {
 async function listarCondominios() {
   const { data, error } = await supabase()
     .from('condominios')
-    .select('id, nome')
+    .select('id, nome, flag_auto_aprovacao')
     .order('nome')
   if (error) throw error
   return data
 }
 
+// ─── BLOCOS ───────────────────────────────────────────────────────
+
+async function listarBlocosPorCondominio(condominioId) {
+  const { data, error } = await supabase()
+    .from('blocos')
+    .select('id, nome')
+    .eq('condominio_id', condominioId)
+    .order('nome')
+  if (error) {
+    // Se tabela nao existe ainda, retorna vazio
+    if (error.code === '42P01') return []
+    throw error
+  }
+  return data || []
+}
+
 // ─── GELADEIRAS ───────────────────────────────────────────────────
 
 async function buscarGeladeiraPorCodigo(codigo) {
-  // codigo = ex: "Geladeira 1 @Adele Zarzur"
-  // extrai o condomínio do @ em diante
   const match = codigo.match(/@(.+)/)
   const nomeCondominio = match ? match[1].trim() : null
   const nomeGeladeira = codigo.split('@')[0].trim()
@@ -137,7 +175,6 @@ async function buscarGeladeiraPorCodigo(codigo) {
     .ilike('nome', `%${nomeGeladeira}%`)
 
   if (nomeCondominio) {
-    // join via condominio
     const { data: cond } = await supabase()
       .from('condominios')
       .select('id')
@@ -151,15 +188,34 @@ async function buscarGeladeiraPorCodigo(codigo) {
   return data
 }
 
+// Extrai condominio de um codigo de geladeira
+function extrairCondominioDeComando(mensagem) {
+  const match = mensagem.match(/@(.+)/)
+  return match ? match[1].trim() : null
+}
+
+// ─── COMANDOS GELADEIRA (polling do Pi) ──────────────────────────
+
+async function inserirComandoGeladeira(geladeiraId, moradorId) {
+  const { error } = await supabase().from('comandos_esp32').insert([{
+    geladeira_id: geladeiraId,
+    morador_id: moradorId,
+    comando: 'abrir',
+    status: 'pendente',
+    criado_em: new Date().toISOString(),
+  }])
+  if (error) throw error
+}
+
 // ─── LOGS ─────────────────────────────────────────────────────────
 
 async function registrarLog(moradorId, geladeiraId, tipo, resultado, detalhes) {
   const { error } = await supabase().from('logs_acesso').insert([{
     morador_id: moradorId,
     geladeira_id: geladeiraId,
-    tipo,           // 'whatsapp' | 'facial'
-    resultado,      // 'aberto' | 'negado'
-    detalhes,       // ex: 'menor de idade', 'cadastro pendente'
+    tipo,
+    resultado,
+    detalhes,
     criado_em: new Date().toISOString(),
   }])
   if (error) throw error
@@ -170,33 +226,15 @@ async function registrarLog(moradorId, geladeiraId, tipo, resultado, detalhes) {
 async function uploadFoto(celular, buffer, mimetype) {
   const ext = mimetype.includes('png') ? 'png' : 'jpg'
   const path = `fotos/${celular}_${Date.now()}.${ext}`
-
   const { error } = await supabase().storage
     .from('selfstore')
     .upload(path, buffer, { contentType: mimetype, upsert: true })
   if (error) throw error
-
   const { data } = supabase().storage.from('selfstore').getPublicUrl(path)
   return data.publicUrl
 }
 
-module.exports = {
-  buscarMoradorPorCelular,
-  buscarMoradorPorCPF,
-  criarMorador,
-  atualizarStatusMorador,
-  atualizarFotoMorador,
-  buscarSessao,
-  salvarSessao,
-  deletarSessao,
-  buscarCondominioPorNome,
-  listarCondominios,
-  buscarGeladeiraPorCodigo,
-  registrarLog,
-  uploadFoto,
-}
-
-// ─── ADMINS WHATSAPP ──────────────────────────────────────────────
+// ─── ADMINS ───────────────────────────────────────────────────────
 
 async function listarAdmins() {
   const { data, error } = await supabase()
@@ -222,8 +260,6 @@ async function removerAdmin(celular) {
   if (error) throw error
 }
 
-// ─── FUNÇÕES AUXILIARES PARA ADMIN ───────────────────────────────
-
 async function listarMoradoresPorStatus(status) {
   const { data, error } = await supabase()
     .from('moradores')
@@ -246,12 +282,10 @@ async function contarPendentes() {
 
 async function buscarMoradorParaAcao(busca) {
   const limpo = busca.replace(/\D/g, '')
-  // Tenta pelo celular primeiro
   if (limpo.length >= 10) {
     const porCelular = await buscarMoradorPorCelular(limpo.length === 11 ? `55${limpo}` : limpo)
     if (porCelular) return porCelular
   }
-  // Tenta pelo nome
   const { data, error } = await supabase()
     .from('moradores')
     .select('*, condominios(*)')
@@ -262,12 +296,29 @@ async function buscarMoradorParaAcao(busca) {
   return data
 }
 
-// Adiciona às exports existentes
-Object.assign(module.exports, {
+module.exports = {
+  buscarMoradorPorCelular,
+  buscarMoradorPorCPF,
+  criarMorador,
+  atualizarStatusMorador,
+  atualizarAceiteTCMorador,
+  atualizarFotoMorador,
+  buscarSessao,
+  salvarSessao,
+  deletarSessao,
+  buscarSessoesAbandonadas,
+  buscarCondominioPorNome,
+  listarCondominios,
+  listarBlocosPorCondominio,
+  buscarGeladeiraPorCodigo,
+  extrairCondominioDeComando,
+  inserirComandoGeladeira,
+  registrarLog,
+  uploadFoto,
   listarAdmins,
   adicionarAdmin,
   removerAdmin,
   listarMoradoresPorStatus,
   contarPendentes,
   buscarMoradorParaAcao,
-})
+}

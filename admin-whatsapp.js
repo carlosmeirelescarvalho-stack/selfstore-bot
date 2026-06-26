@@ -1,48 +1,41 @@
-// admin-whatsapp.js — menu admin via WhatsApp
+// admin-whatsapp.js — menu admin via WhatsApp v2
 
 const db = require('./db')
-const { enviarTexto, MSG } = require('./whatsapp')
-const { validarCPF, validarDataNascimento, isMaiorDeIdade, validarTelefone, normalizarCelular } = require('./validacao')
+const config = require('./config')
+const { enviarTexto, enviarBotoes, notificarAdmin, MSG } = require('./whatsapp')
+const { validarCPF, validarDataNascimento, validarNomeCompleto, validarUnidade, normalizarCelular, dataParaISO, formatarDataNasc } = require('./validacao')
 
-// ─── VERIFICA SE NÚMERO É ADMIN ───────────────────
 async function isAdmin(celular) {
   const admins = await db.listarAdmins()
   return admins.some(a => a.celular === celular && a.ativo)
 }
 
-// ─── DETECTA SE MENSAGEM É COMANDO ADMIN ──────────
-// Admin só entra no menu admin digitando ADMIN ou MENU ADMIN
-// Fora isso, funciona como morador normal (abre geladeira, cadastra, etc.)
 function isComandoAdmin(texto) {
   const t = texto.trim().toUpperCase()
   return t === 'ADMIN' || t === 'MENU ADMIN' || t === 'ADM'
 }
 
-// ─── HANDLER PRINCIPAL ────────────────────────────
-async function handleAdmin(celular, mensagem, tipoMensagem, imagemBase64) {
+async function handleAdmin(celular, mensagem, tipoMensagem, imagemBase64, buttonId) {
   try {
     const sessao = await db.buscarSessao(`admin_${celular}`)
     const texto = mensagem.trim()
 
-    // Sem sessão admin ativa — só entra no menu se digitar ADMIN
     if (!sessao) {
       if (isComandoAdmin(texto)) {
         await mostrarMenuPrincipal(celular)
+        return 'ok'
       }
-      // Se não for comando admin, retorna false para o roteamento principal continuar
-      return !isComandoAdmin(texto) ? 'continuar' : 'ok'
+      return 'continuar'
     }
 
     const etapa = sessao.etapa_atual
     const dados = sessao.dados_parciais || {}
 
-    // Permite sair do menu admin a qualquer momento
     if (texto.toUpperCase() === 'SAIR' || texto === '0') {
       await encerrarSessaoAdmin(celular)
       return 'ok'
     }
 
-    // ── MENU PRINCIPAL ──
     if (etapa === 'menu') {
       switch (texto) {
         case '1': await listarPendentes(celular); break
@@ -51,27 +44,20 @@ async function handleAdmin(celular, mensagem, tipoMensagem, imagemBase64) {
         case '4': await iniciarBloqueio(celular); break
         case '5': await iniciarCadastroAdmin(celular); break
         default:
-          await enviarTexto(celular, `Opção inválida. Responda com um número de 1 a 5 ou *0* para sair.`)
-          await mostrarMenuPrincipal(celular)
+          await enviarTexto(celular, 'Opção inválida. Responda com um número de 1 a 5 ou *0* para sair.')
       }
       return 'ok'
     }
 
-    // ── APROVAÇÃO ──
     if (etapa === 'aprovar_busca') { await buscarMoradorParaAprovar(celular, texto); return 'ok' }
     if (etapa === 'aprovar_confirmar') { await confirmarAprovacao(celular, texto, dados); return 'ok' }
-
-    // ── REJEIÇÃO ──
     if (etapa === 'rejeitar_busca') { await buscarMoradorParaRejeitar(celular, texto); return 'ok' }
     if (etapa === 'rejeitar_confirmar') { await confirmarRejeicao(celular, texto, dados); return 'ok' }
-
-    // ── BLOQUEIO ──
     if (etapa === 'bloquear_busca') { await buscarMoradorParaBloquear(celular, texto); return 'ok' }
     if (etapa === 'bloquear_confirmar') { await confirmarBloqueio(celular, texto, dados); return 'ok' }
 
-    // ── CADASTRO MANUAL ──
     if (etapa.startsWith('cadastro_')) {
-      await processarCadastroAdmin(celular, texto, tipoMensagem, imagemBase64, sessao)
+      await processarCadastroAdmin(celular, texto, tipoMensagem, imagemBase64, buttonId, sessao)
       return 'ok'
     }
 
@@ -89,62 +75,54 @@ async function mostrarMenuPrincipal(celular) {
   await db.salvarSessao(`admin_${celular}`, 'menu', {})
   await enviarTexto(celular,
     `🔐 *Menu Admin SelfStore*\n\n` +
-    `1️⃣ Ver pendentes${pendentes > 0 ? ` *(${pendentes} aguardando)*` : ''}\n` +
+    `1️⃣ Ver pendentes${pendentes > 0 ? ` *(${pendentes})*` : ''}\n` +
     `2️⃣ Aprovar morador\n` +
     `3️⃣ Rejeitar morador\n` +
     `4️⃣ Bloquear morador\n` +
     `5️⃣ Cadastrar morador\n` +
-    `0️⃣ Sair do menu admin\n\n` +
-    `_Responda com o número da opção_`
+    `0️⃣ Sair\n\n` +
+    `_Responda com o número_`
   )
 }
 
 async function encerrarSessaoAdmin(celular) {
   await db.deletarSessao(`admin_${celular}`)
-  await enviarTexto(celular, `✅ Menu admin encerrado. Você continua com acesso normal ao mercadinho.`)
+  await enviarTexto(celular, '✅ Menu admin encerrado.')
 }
 
 // ─── LISTAR PENDENTES ─────────────────────────────
 async function listarPendentes(celular) {
   const pendentes = await db.listarMoradoresPorStatus('pendente')
   if (pendentes.length === 0) {
-    await enviarTexto(celular, `✅ Nenhum cadastro pendente no momento.`)
+    await enviarTexto(celular, '✅ Nenhum cadastro pendente.')
     await mostrarMenuPrincipal(celular)
     return
   }
   const lista = pendentes.slice(0, 10).map((m, i) =>
     `${i + 1}. *${m.nome}*\n   ${m.bloco} • Apto ${m.unidade} • ${m.condominios?.nome || ''}`
   ).join('\n\n')
-  await enviarTexto(celular,
-    `⏳ *Cadastros pendentes:*\n\n${lista}\n\n` +
-    `Use a opção *2* para aprovar ou *3* para rejeitar.`
-  )
+  await enviarTexto(celular, `⏳ *Pendentes:*\n\n${lista}\n\nUse *2* para aprovar ou *3* para rejeitar.`)
   await mostrarMenuPrincipal(celular)
 }
 
 // ─── APROVAÇÃO ────────────────────────────────────
 async function iniciarAprovacao(celular) {
   await db.salvarSessao(`admin_${celular}`, 'aprovar_busca', {})
-  await enviarTexto(celular, `Digite o *celular* ou *nome* do morador que deseja aprovar:`)
+  await enviarTexto(celular, 'Digite o *celular* ou *nome* do morador para aprovar:')
 }
 
 async function buscarMoradorParaAprovar(celular, busca) {
   const morador = await db.buscarMoradorParaAcao(busca)
-  if (!morador) {
-    await enviarTexto(celular, `❌ Morador não encontrado. Tente com outro nome ou celular.`)
-    return
-  }
+  if (!morador) { await enviarTexto(celular, '❌ Morador não encontrado.'); return }
   await db.salvarSessao(`admin_${celular}`, 'aprovar_confirmar', {
-    morador_id: morador.id,
-    morador_nome: morador.nome,
+    morador_id: morador.id, morador_nome: morador.nome,
     morador_celular: morador.celular_whatsapp,
-    foto_url: morador.foto_url,
-    condominio: morador.condominios
+    foto_url: morador.foto_url, condominio: morador.condominios,
+    bloco: morador.bloco, unidade: morador.unidade,
   })
   await enviarTexto(celular,
     `Confirma aprovação de *${morador.nome}*?\n` +
-    `${morador.bloco} • Apto ${morador.unidade}\n\n` +
-    `Responda *SIM* para confirmar ou *NÃO* para cancelar.`
+    `${morador.bloco} • Apto ${morador.unidade}\n\nResponda *SIM* ou *NÃO*.`
   )
 }
 
@@ -159,12 +137,12 @@ async function confirmarAprovacao(celular, resposta, dados) {
         const { cadastrarRostoIDFace, urlParaBase64 } = require('./idface')
         const fotoBase64 = await urlParaBase64(dados.foto_url)
         await cadastrarRostoIDFace(dados.condominio.idface_ip, dados.condominio.idface_senha,
-          { id: dados.morador_id, nome: dados.morador_nome, cpf: '' }, fotoBase64)
+          { id: dados.morador_id, nome: dados.morador_nome, cpf: dados.cpf || '' }, fotoBase64, dados.condominio.idface_user || 'admin')
       } catch (e) { console.error('Erro iDFace:', e) }
     }
     await enviarTexto(celular, `✅ *${dados.morador_nome}* aprovado!`)
   } else {
-    await enviarTexto(celular, `Aprovação cancelada.`)
+    await enviarTexto(celular, 'Cancelado.')
   }
   await mostrarMenuPrincipal(celular)
 }
@@ -172,12 +150,12 @@ async function confirmarAprovacao(celular, resposta, dados) {
 // ─── REJEIÇÃO ─────────────────────────────────────
 async function iniciarRejeicao(celular) {
   await db.salvarSessao(`admin_${celular}`, 'rejeitar_busca', {})
-  await enviarTexto(celular, `Digite o *celular* ou *nome* do morador que deseja rejeitar:`)
+  await enviarTexto(celular, 'Digite o *celular* ou *nome* do morador para rejeitar:')
 }
 
 async function buscarMoradorParaRejeitar(celular, busca) {
   const morador = await db.buscarMoradorParaAcao(busca)
-  if (!morador) { await enviarTexto(celular, `❌ Morador não encontrado.`); return }
+  if (!morador) { await enviarTexto(celular, '❌ Morador não encontrado.'); return }
   await db.salvarSessao(`admin_${celular}`, 'rejeitar_confirmar',
     { morador_id: morador.id, morador_nome: morador.nome, morador_celular: morador.celular_whatsapp })
   await enviarTexto(celular, `Confirma *rejeição* de *${morador.nome}*?\n\nResponda *SIM* ou *NÃO*.`)
@@ -189,7 +167,7 @@ async function confirmarRejeicao(celular, resposta, dados) {
     if (dados.morador_celular) await enviarTexto(dados.morador_celular, MSG.acessoNegadoRejeitado())
     await enviarTexto(celular, `✅ *${dados.morador_nome}* rejeitado.`)
   } else {
-    await enviarTexto(celular, `Cancelado.`)
+    await enviarTexto(celular, 'Cancelado.')
   }
   await mostrarMenuPrincipal(celular)
 }
@@ -197,17 +175,15 @@ async function confirmarRejeicao(celular, resposta, dados) {
 // ─── BLOQUEIO ─────────────────────────────────────
 async function iniciarBloqueio(celular) {
   await db.salvarSessao(`admin_${celular}`, 'bloquear_busca', {})
-  await enviarTexto(celular, `Digite o *celular* ou *nome* do morador que deseja bloquear:`)
+  await enviarTexto(celular, 'Digite o *celular* ou *nome* do morador para bloquear:')
 }
 
 async function buscarMoradorParaBloquear(celular, busca) {
   const morador = await db.buscarMoradorParaAcao(busca)
-  if (!morador) { await enviarTexto(celular, `❌ Morador não encontrado.`); return }
+  if (!morador) { await enviarTexto(celular, '❌ Morador não encontrado.'); return }
   await db.salvarSessao(`admin_${celular}`, 'bloquear_confirmar',
     { morador_id: morador.id, morador_nome: morador.nome, morador_celular: morador.celular_whatsapp })
-  await enviarTexto(celular,
-    `Confirma *bloqueio* de *${morador.nome}*?\n` +
-    `O acesso será suspenso imediatamente.\n\nResponda *SIM* ou *NÃO*.`)
+  await enviarTexto(celular, `Confirma *bloqueio* de *${morador.nome}*?\nO acesso será suspenso.\n\nResponda *SIM* ou *NÃO*.`)
 }
 
 async function confirmarBloqueio(celular, resposta, dados) {
@@ -215,150 +191,265 @@ async function confirmarBloqueio(celular, resposta, dados) {
     await db.atualizarStatusMorador(dados.morador_id, 'rejeitado')
     if (dados.morador_celular) {
       await enviarTexto(dados.morador_celular,
-        `⛔ Seu acesso ao Self Store foi *suspenso* pelo administrador.\n\nPara mais informações, entre em contato com a administração do condomínio.`)
+        '⛔ Seu acesso ao Self Store foi *suspenso* pelo administrador.\n\nPara mais informações, entre em contato com a administração.')
     }
     await enviarTexto(celular, `✅ *${dados.morador_nome}* bloqueado.`)
   } else {
-    await enviarTexto(celular, `Cancelado.`)
+    await enviarTexto(celular, 'Cancelado.')
   }
   await mostrarMenuPrincipal(celular)
 }
 
-// ─── CADASTRO MANUAL PELO ADMIN ───────────────────
+// ─── CADASTRO MANUAL (4E) v2 ──────────────────────
 async function iniciarCadastroAdmin(celular) {
   await db.salvarSessao(`admin_${celular}`, 'cadastro_nome', {})
   await enviarTexto(celular,
-    `📝 *Cadastro de morador*\n\n` +
-    `Qual é o *nome completo* do morador?\n\n` +
-    `_Responda SAIR a qualquer momento para cancelar_`)
+    '📝 *Cadastro de morador*\n\nQual é o *nome completo* do morador?\n\n_Responda SAIR a qualquer momento para cancelar_')
 }
 
-async function processarCadastroAdmin(celular, texto, tipoMensagem, imagemBase64, sessao) {
+async function processarCadastroAdmin(celular, texto, tipoMensagem, imagemBase64, buttonId, sessao) {
   const etapa = sessao.etapa_atual
   const dados = sessao.dados_parciais || {}
+  const sk = `admin_${celular}`
 
-  if (etapa === 'cadastro_nome') {
-    if (texto.length < 3) { await enviarTexto(celular, `Nome muito curto. Tente novamente.`); return }
-    dados.nome = texto
-    await db.salvarSessao(`admin_${celular}`, 'cadastro_cpf', dados)
-    await enviarTexto(celular, `CPF do morador:`)
-    return
-  }
+  switch (etapa) {
 
-  if (etapa === 'cadastro_cpf') {
-    if (!validarCPF(texto)) { await enviarTexto(celular, `CPF inválido. Tente novamente.`); return }
-    const existente = await db.buscarMoradorPorCPF(texto)
-    if (existente) { await enviarTexto(celular, `❌ CPF já cadastrado no sistema.`); return }
-    dados.cpf = texto.replace(/\D/g, '')
-    await db.salvarSessao(`admin_${celular}`, 'cadastro_nasc', dados)
-    await enviarTexto(celular, `Data de nascimento (DD/MM/AAAA):`)
-    return
-  }
-
-  if (etapa === 'cadastro_nasc') {
-    const v = validarDataNascimento(texto)
-    if (!v.valida) { await enviarTexto(celular, `Data inválida. Use o formato DD/MM/AAAA.`); return }
-    if (!isMaiorDeIdade(texto)) {
-      await enviarTexto(celular, `❌ Menor de 18 anos não pode ser cadastrado.`)
-      await mostrarMenuPrincipal(celular)
-      return
-    }
-    dados.data_nasc = texto
-    await db.salvarSessao(`admin_${celular}`, 'cadastro_celular', dados)
-    await enviarTexto(celular,
-      `Celular do morador (com DDD):\n\n` +
-      `_Ex: 11 99999-9999 ou 11 9999-9999 (sem o 9)_`)
-    return
-  }
-
-  if (etapa === 'cadastro_celular') {
-    const celularNorm = normalizarCelular(texto)
-    if (!celularNorm) { await enviarTexto(celular, `Celular inválido. Informe com DDD.`); return }
-    dados.celular_whatsapp = celularNorm
-    dados.telefone = texto.replace(/\D/g, '')
-
-    const condominios = await db.listarCondominios()
-    const lista = condominios.map((c, i) => `${i + 1}️⃣ ${c.nome}`).join('\n')
-    dados._condominios = condominios
-    await db.salvarSessao(`admin_${celular}`, 'cadastro_condominio', dados)
-    await enviarTexto(celular, `Condomínio:\n\n${lista}\n\n_Responda com o número_`)
-    return
-  }
-
-  if (etapa === 'cadastro_condominio') {
-    const condominios = dados._condominios || []
-    const idx = parseInt(texto) - 1
-    if (isNaN(idx) || idx < 0 || idx >= condominios.length) {
-      await enviarTexto(celular, `Opção inválida. Escolha um número da lista.`); return
-    }
-    dados.condominio_id = condominios[idx].id
-    dados.condominio_nome = condominios[idx].nome
-    delete dados._condominios
-    await db.salvarSessao(`admin_${celular}`, 'cadastro_bloco', dados)
-    await enviarTexto(celular, `Bloco do morador:\n\n_Ex: Bloco A, Torre 1_`)
-    return
-  }
-
-  if (etapa === 'cadastro_bloco') {
-    dados.bloco = texto
-    await db.salvarSessao(`admin_${celular}`, 'cadastro_unidade', dados)
-    await enviarTexto(celular, `Unidade/apartamento:\n\n_Ex: 101, 203B_`)
-    return
-  }
-
-  if (etapa === 'cadastro_unidade') {
-    dados.unidade = texto
-    await db.salvarSessao(`admin_${celular}`, 'cadastro_foto', dados)
-    await enviarTexto(celular,
-      `📸 Envie uma *foto do rosto* do morador.\n\n` +
-      `Se não tiver agora, responda *PULAR* — a foto pode ser adicionada depois pelo painel.`)
-    return
-  }
-
-  if (etapa === 'cadastro_foto') {
-    let fotoUrl = null
-    if (tipoMensagem === 'image' && imagemBase64) {
-      const buffer = Buffer.from(imagemBase64, 'base64')
-      fotoUrl = await db.uploadFoto(dados.celular_whatsapp || celular, buffer, 'image/jpeg')
-    } else if (texto.toUpperCase() !== 'PULAR') {
-      await enviarTexto(celular, `Envie uma imagem ou responda *PULAR* para pular.`)
-      return
+    case 'cadastro_nome': {
+      if (!validarNomeCompleto(texto)) {
+        await enviarTexto(celular, 'Por favor, informe *nome e sobrenome* (mínimo 2 palavras).')
+        return
+      }
+      dados.nome = texto
+      await db.salvarSessao(sk, 'cadastro_cpf', dados)
+      await enviarTexto(celular, 'CPF do morador:')
+      break
     }
 
-    // Converte data DD/MM/YYYY para YYYY-MM-DD
-    const [dia, mes, ano] = dados.data_nasc.split('/')
-    const dataNascISO = `${ano}-${mes.padStart(2,'0')}-${dia.padStart(2,'0')}`
+    case 'cadastro_cpf': {
+      if (!validarCPF(texto)) { await enviarTexto(celular, 'CPF inválido.'); return }
+      const existente = await db.buscarMoradorPorCPF(texto)
+      if (existente) { await enviarTexto(celular, '❌ CPF já cadastrado.'); return }
+      dados.cpf = texto.replace(/\D/g, '')
+      await db.salvarSessao(sk, 'cadastro_nasc', dados)
+      await enviarTexto(celular, 'Data de nascimento (DD/MM/AAAA):')
+      break
+    }
 
-    await db.criarMorador({
-      nome: dados.nome,
-      cpf: dados.cpf,
-      data_nasc: dataNascISO,
-      telefone: dados.telefone || null,
-      celular_whatsapp: dados.celular_whatsapp,
-      condominio_id: dados.condominio_id,
-      bloco: dados.bloco,
-      unidade: dados.unidade,
-      foto_url: fotoUrl,
-      status: 'aprovado',
-      criado_em: new Date().toISOString(),
-    })
+    case 'cadastro_nasc': {
+      const v = validarDataNascimento(texto)
+      if (!v.valida) { await enviarTexto(celular, 'Data inválida. Use DD/MM/AAAA.'); return }
+      dados.data_nasc = texto
+      await db.salvarSessao(sk, 'cadastro_celular', dados)
+      await enviarTexto(celular, 'Celular do morador (com DDD):')
+      break
+    }
 
-    await db.deletarSessao(`admin_${celular}`)
+    case 'cadastro_celular': {
+      const celularNorm = normalizarCelular(texto)
+      if (!celularNorm) { await enviarTexto(celular, 'Celular inválido. Informe com DDD.'); return }
+      dados.celular_whatsapp = celularNorm
 
-    await enviarTexto(celular,
-      `✅ *${dados.nome}* cadastrado e aprovado!\n\n` +
-      `📍 ${dados.bloco} • Apto ${dados.unidade} • ${dados.condominio_nome}\n` +
-      `📱 ${dados.celular_whatsapp}\n` +
-      `${fotoUrl ? '📷 Foto registrada.' : '⚠️ Sem foto — adicione pelo painel.'}`
-    )
+      const condominios = await db.listarCondominios()
+      const lista = condominios.map((c, i) => `${i + 1}️⃣ ${c.nome}`).join('\n')
+      dados._condominios = condominios
+      await db.salvarSessao(sk, 'cadastro_condominio', dados)
+      await enviarTexto(celular, `Condomínio:\n\n${lista}\n\n_Digite o número_`)
+      break
+    }
 
-    // Notifica o morador pelo WhatsApp
+    case 'cadastro_condominio': {
+      const condominios = dados._condominios || []
+      const idx = parseInt(texto) - 1
+      if (isNaN(idx) || idx < 0 || idx >= condominios.length) {
+        await enviarTexto(celular, 'Opção inválida.')
+        return
+      }
+      dados.condominio_id = condominios[idx].id
+      dados.condominio_nome = condominios[idx].nome
+      delete dados._condominios
+
+      const blocos = await db.listarBlocosPorCondominio(dados.condominio_id)
+      if (blocos.length > 0) {
+        const lista = blocos.map((b, i) => `${i + 1}️⃣ ${b.nome}`).join('\n')
+        dados._blocos = blocos
+        await db.salvarSessao(sk, 'cadastro_bloco', dados)
+        await enviarTexto(celular, `Bloco:\n\n${lista}\n\n_Digite o número_`)
+      } else {
+        await db.salvarSessao(sk, 'cadastro_bloco', dados)
+        await enviarTexto(celular, 'Bloco do morador:')
+      }
+      break
+    }
+
+    case 'cadastro_bloco': {
+      const blocos = dados._blocos || []
+      if (blocos.length > 0) {
+        const idx = parseInt(texto) - 1
+        if (isNaN(idx) || idx < 0 || idx >= blocos.length) {
+          await enviarTexto(celular, 'Opção inválida. Escolha um número da lista.')
+          return
+        }
+        dados.bloco = blocos[idx].nome
+      } else {
+        dados.bloco = texto
+      }
+      delete dados._blocos
+      await db.salvarSessao(sk, 'cadastro_unidade', dados)
+      await enviarTexto(celular, 'Unidade/apartamento:')
+      break
+    }
+
+    case 'cadastro_unidade': {
+      if (!validarUnidade(texto)) {
+        await enviarTexto(celular, 'O apartamento precisa conter um número.')
+        return
+      }
+      dados.unidade = texto.trim()
+      await db.salvarSessao(sk, 'cadastro_foto', dados)
+      await enviarTexto(celular,
+        '📸 Envie uma *foto do rosto* do morador.\n\nSe não tiver agora, responda *PULAR*.')
+      break
+    }
+
+    case 'cadastro_foto': {
+      let fotoUrl = null
+      if (tipoMensagem === 'image' && imagemBase64) {
+        const buffer = Buffer.from(imagemBase64, 'base64')
+        fotoUrl = await db.uploadFoto(dados.celular_whatsapp || celular, buffer, 'image/jpeg')
+      } else if (texto.toUpperCase() !== 'PULAR') {
+        await enviarTexto(celular, 'Envie uma imagem ou responda *PULAR*.')
+        return
+      }
+      dados.foto_url = fotoUrl
+      await db.salvarSessao(sk, 'cadastro_confirmar', dados)
+      await enviarBotoes(celular,
+        `Confira os dados:\n\n` +
+        `👤 ${dados.nome}\n` +
+        `🪪 ${dados.cpf}\n` +
+        `🎂 ${formatarDataNasc(dados.data_nasc)}\n` +
+        `📱 ${dados.celular_whatsapp}\n` +
+        `🏢 ${dados.condominio_nome}\n` +
+        `🏗️ ${dados.bloco} • 🚪 ${dados.unidade}\n` +
+        `📸 ${fotoUrl ? 'Com foto' : 'Sem foto'}\n\n` +
+        `Confirmar cadastro?`,
+        [
+          { id: 'admin_confirmar_sim', titulo: 'Confirmar' },
+          { id: 'admin_confirmar_corrigir', titulo: 'Corrigir' },
+        ]
+      )
+      break
+    }
+
+    case 'cadastro_confirmar': {
+      if (buttonId === 'admin_confirmar_corrigir') {
+        await db.salvarSessao(sk, 'cadastro_corrigir', dados)
+        await enviarTexto(celular,
+          'O que deseja corrigir?\n\n' +
+          '1️⃣ Nome\n2️⃣ CPF\n3️⃣ Data de nascimento\n4️⃣ Celular\n5️⃣ Condomínio\n6️⃣ Bloco\n7️⃣ Unidade\n8️⃣ Foto\n\n_Digite o número_')
+        return
+      }
+      if (buttonId === 'admin_confirmar_sim') {
+        await finalizarCadastroAdmin(celular, dados, imagemBase64)
+        return
+      }
+      await enviarBotoes(celular, 'Selecione uma opção:', [
+        { id: 'admin_confirmar_sim', titulo: 'Confirmar' },
+        { id: 'admin_confirmar_corrigir', titulo: 'Corrigir' },
+      ])
+      break
+    }
+
+    case 'cadastro_corrigir': {
+      const mapa = { 1: 'cadastro_nome', 2: 'cadastro_cpf', 3: 'cadastro_nasc', 4: 'cadastro_celular', 5: 'cadastro_condominio', 6: 'cadastro_bloco', 7: 'cadastro_unidade', 8: 'cadastro_foto' }
+      const destino = mapa[parseInt(texto)]
+      if (!destino) {
+        await enviarTexto(celular, 'Opção inválida. Digite de 1 a 8.')
+        return
+      }
+      await db.salvarSessao(sk, destino, dados)
+      const msgs = {
+        cadastro_nome: 'Nome completo:',
+        cadastro_cpf: 'CPF:',
+        cadastro_nasc: 'Data de nascimento (DD/MM/AAAA):',
+        cadastro_celular: 'Celular (com DDD):',
+        cadastro_foto: '📸 Envie foto ou responda *PULAR*.',
+        cadastro_unidade: 'Unidade/apartamento:',
+      }
+      if (destino === 'cadastro_condominio') {
+        const condominios = await db.listarCondominios()
+        const lista = condominios.map((c, i) => `${i + 1}️⃣ ${c.nome}`).join('\n')
+        dados._condominios = condominios
+        await db.salvarSessao(sk, destino, dados)
+        await enviarTexto(celular, `Condomínio:\n\n${lista}\n\n_Digite o número_`)
+      } else if (destino === 'cadastro_bloco') {
+        const blocos = await db.listarBlocosPorCondominio(dados.condominio_id)
+        if (blocos.length > 0) {
+          const lista = blocos.map((b, i) => `${i + 1}️⃣ ${b.nome}`).join('\n')
+          dados._blocos = blocos
+          await db.salvarSessao(sk, destino, dados)
+          await enviarTexto(celular, `Bloco:\n\n${lista}\n\n_Digite o número_`)
+        } else {
+          await enviarTexto(celular, 'Bloco do morador:')
+        }
+      } else {
+        await enviarTexto(celular, msgs[destino] || 'Informe o novo valor:')
+      }
+      break
+    }
+  }
+}
+
+async function finalizarCadastroAdmin(celular, dados, imagemBase64) {
+  const dataNascISO = dataParaISO(dados.data_nasc)
+
+  const moradorCriado = await db.criarMorador({
+    nome: dados.nome,
+    cpf: dados.cpf,
+    data_nasc: dataNascISO,
+    celular_whatsapp: dados.celular_whatsapp,
+    condominio_id: dados.condominio_id,
+    bloco: dados.bloco,
+    unidade: dados.unidade,
+    foto_url: dados.foto_url || null,
+    status: 'aprovado',
+    aceite_tc: false,
+    criado_em: new Date().toISOString(),
+  })
+
+  // Sincroniza com iDFace se tiver foto
+  if (dados.foto_url && dados.condominio_id) {
     try {
-      await enviarTexto(dados.celular_whatsapp, MSG.cadastroAprovadoAuto(dados.nome))
-    } catch(e) { console.warn('Não foi possível notificar o morador:', e.message) }
-
-    await mostrarMenuPrincipal(celular)
+      const cond = await db.buscarCondominioPorNome(dados.condominio_nome)
+      if (cond?.idface_ip) {
+        const { cadastrarRostoIDFace, urlParaBase64 } = require('./idface')
+        const fb64 = await urlParaBase64(dados.foto_url)
+        await cadastrarRostoIDFace(cond.idface_ip, cond.idface_senha, moradorCriado, fb64, cond.idface_user || 'admin')
+      }
+    } catch(e) { console.error('Erro iDFace sync admin:', e.message) }
   }
+
+  await db.deletarSessao(`admin_${celular}`)
+
+  await enviarTexto(celular,
+    `✅ *${dados.nome}* cadastrado e aprovado!\n\n` +
+    `📍 ${dados.bloco} • Apto ${dados.unidade} • ${dados.condominio_nome}\n` +
+    `📱 ${dados.celular_whatsapp}\n` +
+    `${dados.foto_url ? '📷 Foto registrada.' : '⚠️ Sem foto — adicione pelo painel.'}`
+  )
+
+  // Notifica o morador com T&C (aceite_tc = false até ele aceitar)
+  try {
+    await enviarBotoes(dados.celular_whatsapp,
+      MSG.moradorTCNotificacao(dados.nome, dados.condominio_nome, config.LINK_TC),
+      [
+        { id: 'tc_morador_aceito', titulo: 'Li e estou de acordo' },
+        { id: 'tc_morador_recusado', titulo: 'Não estou de acordo' },
+      ]
+    )
+    await db.salvarSessao(dados.celular_whatsapp, 'morador_tc', { morador_id: moradorCriado.id })
+  } catch(e) { console.warn('Não foi possível notificar o morador:', e.message) }
+
+  await mostrarMenuPrincipal(celular)
 }
 
 module.exports = { handleAdmin, isAdmin, isComandoAdmin }

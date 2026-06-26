@@ -1,90 +1,103 @@
-// handlers/geladeira.js — fluxo 3 completo
+// handlers/geladeira.js — fluxo 3 (abertura de geladeira) v2
 
 const db = require('./db')
-const { enviarTexto, MSG } = require('./whatsapp')
-const { isMaiorDeIdade } = require('./validacao')
-const { abrirGeladeira } = require('./esp32')
 const config = require('./config')
+const { enviarTexto, enviarBotoes, notificarAdmin, MSG } = require('./whatsapp')
+const { isMaiorDeIdade } = require('./validacao')
 
-// Mensagem enviada pelo QR Code: "ABRIR Geladeira 1 @Adele Zarzur"
-// Detecta se a mensagem é um comando de abertura de geladeira
 function isComandoGeladeira(mensagem) {
   return mensagem.trim().toUpperCase().startsWith('ABRIR ')
 }
 
-async function handleGeladeira(celular, mensagem) {
+async function handleGeladeira(celular, mensagem, buttonId) {
   try {
-    // 1. Extrai o identificador da geladeira da mensagem
-    // "ABRIR Geladeira 1 @Adele Zarzur" → "Geladeira 1 @Adele Zarzur"
     const codigoGeladeira = mensagem.trim().substring(6).trim()
-
     if (!codigoGeladeira) {
-      await enviarTexto(celular, MSG.naoEntendido())
+      await enviarTexto(celular, MSG.erroGeral())
       return
     }
 
-    // 2. Busca morador pelo celular
+    const nomeCondominio = db.extrairCondominioDeComando(codigoGeladeira)
     const morador = await db.buscarMoradorPorCelular(celular)
 
+    // 3.1 — Não cadastrado
     if (!morador) {
-      // Não cadastrado — redireciona para cadastro
-      await enviarTexto(
-        celular,
-        `👋 Olá! Para acessar a *${codigoGeladeira}*, você precisa estar cadastrado.\n\n` +
-        `Para se cadastrar, aponte a câmera do celular para o *QR Code de cadastro* disponível no condomínio, ou envie *CADASTRO* agora.`
-      )
+      await enviarBotoes(celular, MSG.geladeiraNaoCadastrado(), [
+        { id: 'iniciar_cadastro', titulo: 'Fazer cadastro agora' },
+      ])
+      // Guarda contexto do condominio na sessao para uso no fluxo 1
+      if (nomeCondominio) {
+        await db.salvarSessao(celular, 'aguardando_cadastro_geladeira', { condominio_origem: nomeCondominio })
+      }
       return
     }
 
-    // 3. Verifica status do cadastro
+    // 3.2 — Pendente
     if (morador.status === 'pendente') {
       await enviarTexto(celular, MSG.acessoNegadoPendente())
       await db.registrarLog(morador.id, null, 'whatsapp', 'negado', 'cadastro pendente')
       return
     }
 
+    // 3.3 — Rejeitado
     if (morador.status === 'rejeitado') {
       await enviarTexto(celular, MSG.acessoNegadoRejeitado())
       await db.registrarLog(morador.id, null, 'whatsapp', 'negado', 'cadastro rejeitado')
       return
     }
 
-    // 4. Busca a geladeira pelo código
+    // 3.4 — Busca geladeira
     const geladeira = await db.buscarGeladeiraPorCodigo(codigoGeladeira)
-
     if (!geladeira) {
-      await enviarTexto(
-        celular,
-        `❌ Geladeira não encontrada: *${codigoGeladeira}*.\n\nVerifique o QR Code e tente novamente.`
-      )
+      await enviarTexto(celular, `❌ Geladeira não encontrada: *${codigoGeladeira}*.\n\nVerifique o QR Code e tente novamente.`)
       return
     }
 
-    // 5. Verifica restrição de álcool
-    if (geladeira.flag_alcoolica) {
-      if (!isMaiorDeIdade(morador.data_nasc)) {
-        await enviarTexto(celular, MSG.acessoNegadoMenor())
-        await db.registrarLog(morador.id, geladeira.id, 'whatsapp', 'negado', 'menor de idade')
-        return
-      }
+    // 3.5 — Restrição álcool
+    if (geladeira.flag_alcoolica && !isMaiorDeIdade(morador.data_nasc)) {
+      await enviarTexto(celular, MSG.acessoNegadoMenor())
+      await db.registrarLog(morador.id, geladeira.id, 'whatsapp', 'negado', 'menor de idade')
+      return
     }
 
-    // 6. Verifica se o ESP32 está configurado
+    // 3.6 — Aceite T&C
+    if (!morador.aceite_tc) {
+      await db.salvarSessao(celular, 'geladeira_tc', {
+        geladeira_codigo: codigoGeladeira,
+        geladeira_id: geladeira.id,
+        morador_id: morador.id,
+      })
+      await enviarBotoes(celular, MSG.geladeiraAceiteTCNecessario(config.LINK_TC), [
+        { id: 'tc_geladeira_aceito', titulo: 'Li e estou de acordo' },
+        { id: 'tc_geladeira_recusado', titulo: 'Não estou de acordo' },
+      ])
+      return
+    }
+
+    // 3.7 — Em manutenção
+    if (geladeira.status === 'manutencao') {
+      await enviarTexto(celular, MSG.geladeiraEmManutencao())
+      await db.registrarLog(morador.id, geladeira.id, 'whatsapp', 'negado', 'manutenção')
+      return
+    }
+
+    // 3.8 — Pi não configurado
     if (!geladeira.esp32_ip) {
-      await enviarTexto(
-        celular,
-        `⚠️ Esta geladeira ainda não está configurada. Informe o administrador.`
+      await enviarTexto(celular, '⚠️ Esta geladeira ainda não está configurada. Informe o administrador.')
+      await notificarAdmin(
+        `⚠️ *Geladeira sem dispositivo*\n\n` +
+        `Geladeira: ${geladeira.nome}\n` +
+        `Morador tentou abrir: ${morador.nome} (${celular})\n` +
+        `Condomínio: ${geladeira.condominios?.nome || 'N/A'}`
       )
       return
     }
 
-    // 7. Aciona o ESP32
-    await abrirGeladeira(geladeira.esp32_ip)
+    // 3.9 — Abre via INSERT na tabela comandos_esp32 (Pi faz polling)
+    await db.inserirComandoGeladeira(geladeira.id, morador.id)
 
-    // 8. Confirma para o morador
+    // 3.10 — Confirma
     await enviarTexto(celular, MSG.geladeiraAberta(geladeira.nome))
-
-    // 9. Registra log
     await db.registrarLog(morador.id, geladeira.id, 'whatsapp', 'aberto', null)
 
   } catch (err) {
@@ -93,4 +106,28 @@ async function handleGeladeira(celular, mensagem) {
   }
 }
 
-module.exports = { handleGeladeira, isComandoGeladeira }
+// Handler para aceite T&C da geladeira (chamado pelo index quando buttonId = tc_geladeira_*)
+async function handleGeladeiraTC(celular, buttonId) {
+  const sessao = await db.buscarSessao(celular)
+  if (!sessao || sessao.etapa_atual !== 'geladeira_tc') return false
+
+  const dados = sessao.dados_parciais || {}
+
+  if (buttonId === 'tc_geladeira_recusado') {
+    await enviarTexto(celular, MSG.geladeiraAceiteTCRecusado())
+    await db.deletarSessao(celular)
+    return true
+  }
+
+  if (buttonId === 'tc_geladeira_aceito') {
+    await db.atualizarAceiteTCMorador(dados.morador_id)
+    await db.deletarSessao(celular)
+    // Refaz a abertura agora que T&C foi aceito
+    await handleGeladeira(celular, `ABRIR ${dados.geladeira_codigo}`, null)
+    return true
+  }
+
+  return false
+}
+
+module.exports = { handleGeladeira, isComandoGeladeira, handleGeladeiraTC }
