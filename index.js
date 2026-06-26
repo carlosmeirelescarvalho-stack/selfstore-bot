@@ -1,18 +1,17 @@
-// index.js — servidor principal
+// index.js — servidor principal v2
 
 const express = require('express')
+const cron = require('node-cron')
 const config = require('./config')
-const { handleCadastro, sincronizarComIDFace } = require('./cadastro')
-const { handleAdmin, isAdmin } = require('./admin-whatsapp')
+const { handleCadastro, iniciarCadastro } = require('./cadastro')
+const { handleAdmin, isAdmin, isComandoAdmin } = require('./admin-whatsapp')
 const { previewPlanilha, importarPlanilha, cadastrarManual } = require('./importacao')
 const multer = require('multer')
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } })
-const { handleGeladeira, isComandoGeladeira } = require('./geladeira')
-const { enviarTexto, buscarImagemMeta, transferirParaHumano, MSG } = require('./whatsapp')
+const { handleGeladeira, isComandoGeladeira, handleGeladeiraTC } = require('./geladeira')
+const { enviarTexto, enviarBotoes, buscarImagemMeta, iniciarAtendimentoHumano, notificarAdmin, MSG } = require('./whatsapp')
 const db = require('./db')
 
-
-// Helper Supabase com ws (evita erro de WebSocket no Node 20)
 const ws = require('ws')
 const { createClient: _createClient } = require('@supabase/supabase-js')
 function getSupa() {
@@ -29,23 +28,37 @@ app.use((req, res, next) => {
   res.header('Access-Control-Allow-Headers', 'Content-Type,X-ESP32-Secret')
   if (req.method === 'OPTIONS') return res.sendStatus(200)
   next()
-}) // imagens chegam em base64
+})
+
+// ─── CRON — limpeza de sessões abandonadas (8h São Paulo) ─────────
+cron.schedule('0 8 * * *', async () => {
+  try {
+    const abandonadas = await db.buscarSessoesAbandonadas()
+    for (const s of abandonadas) {
+      try {
+        await enviarTexto(s.celular, MSG.sessaoAbandonada())
+      } catch(e) { /* celular pode ser admin_xxx, ignora */ }
+      await db.deletarSessao(s.celular)
+    }
+    console.log(`Cron 8h: ${abandonadas.length} sessões abandonadas limpas`)
+  } catch(e) {
+    console.error('Erro cron sessoes abandonadas:', e)
+  }
+}, { timezone: 'America/Sao_Paulo' })
 
 // ─── WEBHOOK — Meta Cloud API ─────────────────────────────────────
 
-// GET — verificação do webhook pela Meta
 app.get('/webhook/whatsapp', (req, res) => {
   const mode = req.query['hub.mode']
   const token = req.query['hub.verify_token']
   const challenge = req.query['hub.challenge']
   if (mode === 'subscribe' && token === config.META_WEBHOOK_VERIFY_TOKEN) {
-    console.log('Webhook Meta verificado com sucesso')
+    console.log('Webhook Meta verificado')
     return res.status(200).send(challenge)
   }
   res.sendStatus(403)
 })
 
-// POST — recebe mensagens do WhatsApp via Meta Cloud API
 app.post('/webhook/whatsapp', async (req, res) => {
   res.sendStatus(200)
   try {
@@ -55,17 +68,15 @@ app.post('/webhook/whatsapp', async (req, res) => {
     for (const entry of body.entry || []) {
       for (const change of entry.changes || []) {
         if (change.field !== 'messages') continue
-        const value = change.value
-        const messages = value?.messages
+        const messages = change.value?.messages
         if (!messages?.length) continue
-
         for (const msg of messages) {
-          await processarMensagemMeta(msg, value)
+          await processarMensagemMeta(msg, change.value)
         }
       }
     }
   } catch (err) {
-    console.error('Erro no webhook Meta:', err)
+    console.error('Erro webhook Meta:', err)
   }
 })
 
@@ -76,6 +87,7 @@ async function processarMensagemMeta(msg, value) {
 
     const tipoMensagem = detectarTipo(msg)
     const textoMensagem = extrairTexto(msg, tipoMensagem)
+    const buttonId = extrairButtonId(msg)
 
     let imagemBase64 = null
     if (tipoMensagem === 'image') {
@@ -83,81 +95,177 @@ async function processarMensagemMeta(msg, value) {
       if (mediaId) imagemBase64 = await buscarImagemMeta(mediaId)
     }
 
-    // ── ROTEAMENTO ──────────────────────────────────────────────
+    // ── AJUDA global (antes de qualquer roteamento) ──
+    if (textoMensagem.toUpperCase().trim() === 'AJUDA') {
+      await iniciarAtendimentoHumano(celular)
+      return
+    }
 
+    // ── Admin: sessão ativa ou comando ADMIN ──
     const adminAutorizado = await isAdmin(celular)
     if (adminAutorizado) {
       const sessaoAdmin = await db.buscarSessao('admin_' + celular)
-      const { isComandoAdmin } = require('./admin-whatsapp')
       if (sessaoAdmin || isComandoAdmin(textoMensagem)) {
-        const resultado = await handleAdmin(celular, textoMensagem, tipoMensagem, imagemBase64)
+        const resultado = await handleAdmin(celular, textoMensagem, tipoMensagem, imagemBase64, buttonId)
         if (resultado !== 'continuar') return
       }
     }
 
+    // ── Sessão ativa (cadastro, geladeira_tc, morador_tc, atendimento) ──
     const sessaoAtiva = await db.buscarSessao(celular)
     if (sessaoAtiva) {
-      await handleCadastro(celular, textoMensagem, tipoMensagem, imagemBase64)
+      const etapa = sessaoAtiva.etapa_atual
+
+      // T&C geladeira
+      if (etapa === 'geladeira_tc') {
+        const handled = await handleGeladeiraTC(celular, buttonId)
+        if (handled) return
+      }
+
+      // T&C morador (cadastrado pelo admin)
+      if (etapa === 'morador_tc') {
+        await handleMoradorTC(celular, buttonId, sessaoAtiva)
+        return
+      }
+
+      // Aguardando cadastro vindo da geladeira
+      if (etapa === 'aguardando_cadastro_geladeira') {
+        if (buttonId === 'iniciar_cadastro') {
+          const dados = sessaoAtiva.dados_parciais || {}
+          await db.deletarSessao(celular)
+          await iniciarCadastro(celular, dados.condominio_origem)
+          return
+        }
+      }
+
+      // Sub-fluxo atendimento humano
+      if (etapa === 'atendimento_nome') {
+        await handleAtendimentoNome(celular, textoMensagem)
+        return
+      }
+      if (etapa === 'atendimento_motivo') {
+        await handleAtendimentoMotivo(celular, textoMensagem)
+        return
+      }
+
+      // Cadastro normal
+      await handleCadastro(celular, textoMensagem, tipoMensagem, imagemBase64, buttonId)
       return
     }
 
+    // ── Comando de abertura de geladeira ──
     if (tipoMensagem === 'text' && isComandoGeladeira(textoMensagem)) {
-      await handleGeladeira(celular, textoMensagem)
+      await handleGeladeira(celular, textoMensagem, buttonId)
       return
     }
 
-    const textUpper = textoMensagem.toUpperCase().trim()
-    const isCadastro = ['2', 'CADASTRO', 'CADASTRAR', 'OI', 'OLÁ', 'OLA', 'INICIO', 'INÍCIO', 'START']
-      .includes(textUpper)
+    // ── FLUXO 0 — primeira interação / roteamento ──
+    await handleFluxo0(celular, textoMensagem, buttonId)
 
-    if (isCadastro) {
-      await handleCadastro(celular, textoMensagem, tipoMensagem, imagemBase64)
-      return
-    }
-
-    if (textUpper === '1') {
-      await enviarTexto(celular, `📷 Para abrir a geladeira, aponte a câmera do seu celular para o *QR Code* colado na geladeira.\n\nÉ rápido e simples! 😊`)
-      return
-    }
-
-    if (textUpper === 'AJUDA') {
-      await transferirParaHumano(celular, null)
-      return
-    }
-
-    await enviarTexto(celular, MSG.naoEntendido())
   } catch (err) {
-    console.error('Erro ao processar mensagem Meta:', err)
+    console.error('Erro ao processar mensagem:', err)
   }
 }
 
-// ─── WEBHOOK DO iDFace — recebe eventos de acesso facial ──────────
+// ─── FLUXO 0 — Welcome & Routing ─────────────────────────────────
+
+async function handleFluxo0(celular, texto, buttonId) {
+  const morador = await db.buscarMoradorPorCelular(celular)
+
+  // Botão "Fazer cadastro agora" vindo da geladeira
+  if (buttonId === 'iniciar_cadastro') {
+    await iniciarCadastro(celular)
+    return
+  }
+
+  if (morador && morador.status === 'aprovado') {
+    // Já cadastrado
+    await enviarBotoes(celular, MSG.jaCadastrado(), [
+      { id: 'fluxo0_ajuda', titulo: 'Atendimento humano' },
+    ])
+  } else if (morador && morador.status === 'pendente') {
+    await enviarTexto(celular, MSG.acessoNegadoPendente())
+  } else {
+    // Não cadastrado
+    await enviarBotoes(celular, `${MSG.apresentacao()}\n\n${MSG.naoCadastrado()}`, [
+      { id: 'iniciar_cadastro', titulo: 'Fazer cadastro' },
+      { id: 'fluxo0_ajuda', titulo: 'Falar com atendente' },
+    ])
+  }
+
+  // Se veio de botão atendimento
+  if (buttonId === 'fluxo0_ajuda') {
+    await iniciarAtendimentoHumano(celular)
+  }
+}
+
+// ─── Handler T&C morador (cadastrado pelo admin) ──────────────────
+
+async function handleMoradorTC(celular, buttonId, sessao) {
+  const dados = sessao.dados_parciais || {}
+
+  if (buttonId === 'tc_morador_aceito') {
+    await db.atualizarAceiteTCMorador(dados.morador_id)
+    await enviarTexto(celular, MSG.moradorTCAceito())
+    await db.deletarSessao(celular)
+    return
+  }
+
+  if (buttonId === 'tc_morador_recusado') {
+    await enviarTexto(celular, MSG.geladeiraAceiteTCRecusado())
+    await db.deletarSessao(celular)
+    return
+  }
+
+  await enviarBotoes(celular, MSG.naoEntendidoFluxo0(), [
+    { id: 'tc_morador_aceito', titulo: 'Li e estou de acordo' },
+    { id: 'tc_morador_recusado', titulo: 'Não estou de acordo' },
+  ])
+}
+
+// ─── Sub-fluxo atendimento humano ─────────────────────────────────
+
+async function handleAtendimentoNome(celular, texto) {
+  const dados = { nome_atendimento: texto.trim() }
+  await db.salvarSessao(celular, 'atendimento_motivo', dados)
+  await enviarTexto(celular, 'Obrigado! E qual o *motivo* do contato?')
+}
+
+async function handleAtendimentoMotivo(celular, texto) {
+  const sessao = await db.buscarSessao(celular)
+  const dados = sessao?.dados_parciais || {}
+  await db.deletarSessao(celular)
+
+  const hora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+  await notificarAdmin(
+    `📲 *Solicitação de atendimento*\n\n` +
+    `Nome: ${dados.nome_atendimento || 'N/A'}\n` +
+    `Celular: ${celular}\n` +
+    `Motivo: ${texto}\n` +
+    `Horário: ${hora}`
+  )
+  await enviarTexto(celular, '✅ Seus dados foram encaminhados para nosso time de suporte. Em breve entrarão em contato!')
+}
+
+// ─── WEBHOOK iDFace ───────────────────────────────────────────────
 app.post('/webhook/idface', async (req, res) => {
   res.sendStatus(200)
   try {
     const evento = req.body
-    // O iDFace envia: { user_id, name, timestamp, door, result }
     if (!evento.user_id) return
-
-    await db.registrarLog(
-      evento.user_id,
-      null, // geladeira_id não se aplica ao facial
-      'facial',
+    await db.registrarLog(evento.user_id, null, 'facial',
       evento.result === 'granted' ? 'aberto' : 'negado',
-      evento.result !== 'granted' ? evento.result : null
-    )
+      evento.result !== 'granted' ? evento.result : null)
   } catch (err) {
-    console.error('Erro no webhook iDFace:', err)
+    console.error('Erro webhook iDFace:', err)
   }
 })
 
 // ─── HEALTH CHECK ─────────────────────────────────────────────────
 app.get('/health', (req, res) => res.json({ status: 'ok', ts: new Date() }))
 
-
 // ─── ENDPOINTS PAINEL ADMIN ───────────────────────────────────────
 
-// GET /admin/moradores — lista moradores com filtros
 app.get('/admin/moradores', async (req, res) => {
   try {
     const { status, busca, limit = 50, offset = 0 } = req.query
@@ -172,45 +280,33 @@ app.get('/admin/moradores', async (req, res) => {
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
-// PATCH /admin/moradores/:id — atualiza status e notifica morador
 app.patch('/admin/moradores/:id', async (req, res) => {
   try {
     const { status } = req.body
     const morador = await db.atualizarStatusMorador(req.params.id, status)
     res.json({ morador })
 
-    // Notifica o morador via WhatsApp após aprovação ou rejeição
     if (morador && morador.celular_whatsapp) {
-      // enviarTexto, cadastrarRostoIDFace, urlParaBase64 já importados no topo
-
       if (status === 'aprovado') {
-        try { await enviarTexto(morador.celular_whatsapp, MSG.cadastroAprovadoAuto(morador.nome)) } catch(e) { console.error('Erro ao notificar morador WhatsApp:', e.message) }
-
-        // Sincroniza rosto com iDFace se tiver foto
+        try { await enviarTexto(morador.celular_whatsapp, MSG.cadastroAprovadoAuto(morador.nome)) } catch(e) { console.error('Erro notif WhatsApp:', e.message) }
         if (morador.foto_url) {
           try {
-            const { createClient } = require('@supabase/supabase-js')
-            const ws = require('ws')
-            const supa = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, { realtime: { transport: ws } })
+            const supa = getSupa()
             const { data: cond } = await supa.from('condominios').select('*').eq('id', morador.condominio_id).single()
             if (cond?.idface_ip) {
               const { cadastrarRostoIDFace, urlParaBase64 } = require('./idface')
               const fotoBase64 = await urlParaBase64(morador.foto_url)
               await cadastrarRostoIDFace(cond.idface_ip, cond.idface_senha, morador, fotoBase64, cond.idface_user || 'admin')
-              console.log(`Rosto sincronizado com iDFace: ${morador.nome}`)
             }
-          } catch(e) {
-            console.error('Erro ao sincronizar iDFace:', e.message)
-          }
+          } catch(e) { console.error('Erro iDFace sync:', e.message) }
         }
       } else if (status === 'rejeitado') {
-        try { await enviarTexto(morador.celular_whatsapp, MSG.acessoNegadoRejeitado()) } catch(e) { console.error('Erro ao notificar rejeicao WhatsApp:', e.message) }
+        try { await enviarTexto(morador.celular_whatsapp, MSG.acessoNegadoRejeitado()) } catch(e) { console.error('Erro notif rejeicao:', e.message) }
       }
     }
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
-// POST /admin/moradores — cadastro manual
 app.post('/admin/moradores', async (req, res) => {
   try {
     const resultado = await cadastrarManual(req.body)
@@ -219,7 +315,6 @@ app.post('/admin/moradores', async (req, res) => {
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
-// POST /admin/importar/preview — preview da planilha
 app.post('/admin/importar/preview', upload.single('planilha'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ erro: 'Nenhum arquivo enviado' })
@@ -229,7 +324,6 @@ app.post('/admin/importar/preview', upload.single('planilha'), async (req, res) 
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
-// POST /admin/importar/confirmar — confirma importação
 app.post('/admin/importar/confirmar', upload.single('planilha'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ erro: 'Nenhum arquivo enviado' })
@@ -239,7 +333,6 @@ app.post('/admin/importar/confirmar', upload.single('planilha'), async (req, res
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
-// GET /admin/admins — lista admins whatsapp
 app.get('/admin/admins', async (req, res) => {
   try {
     const admins = await db.listarAdmins()
@@ -247,7 +340,6 @@ app.get('/admin/admins', async (req, res) => {
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
-// POST /admin/admins — adiciona admin
 app.post('/admin/admins', async (req, res) => {
   try {
     const { celular, nome } = req.body
@@ -256,7 +348,6 @@ app.post('/admin/admins', async (req, res) => {
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
-// DELETE /admin/admins/:celular — remove admin
 app.delete('/admin/admins/:celular', async (req, res) => {
   try {
     await db.removerAdmin(req.params.celular)
@@ -264,7 +355,6 @@ app.delete('/admin/admins/:celular', async (req, res) => {
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
-// GET /admin/stats — estatísticas do dashboard
 app.get('/admin/stats', async (req, res) => {
   try {
     const supa = getSupa()
@@ -283,7 +373,6 @@ app.get('/admin/stats', async (req, res) => {
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
-// GET /admin/logs
 app.get('/admin/logs', async (req, res) => {
   try {
     const { tipo, resultado, limit = 50 } = req.query
@@ -300,7 +389,6 @@ app.get('/admin/logs', async (req, res) => {
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
-// GET /admin/geladeiras
 app.get('/admin/geladeiras', async (req, res) => {
   try {
     const supa = getSupa()
@@ -310,7 +398,6 @@ app.get('/admin/geladeiras', async (req, res) => {
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
-// GET /admin/condominios
 app.get('/admin/condominios', async (req, res) => {
   try {
     const supa = getSupa()
@@ -320,7 +407,6 @@ app.get('/admin/condominios', async (req, res) => {
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
-// PATCH /admin/condominios/:id
 app.patch('/admin/condominios/:id', async (req, res) => {
   try {
     const supa = getSupa()
@@ -330,16 +416,16 @@ app.patch('/admin/condominios/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
-// GET /painel — serve o painel admin
 app.get('/painel', (req, res) => {
   res.sendFile(__dirname + '/painel.html')
 })
-// ESP32 heartbeat — atualiza IP automaticamente no banco
+
+// ESP32/Pi polling endpoint
 app.post('/esp32/heartbeat', async (req, res) => {
   res.sendStatus(200)
   try {
     const secret = req.headers['x-esp32-secret']
-    if (secret !== (process.env.ESP32_SECRET || 'troque-por-uma-chave-secreta-forte')) return
+    if (secret !== config.ESP32_SECRET) return
     const { geladeira, ip, evento } = req.body
     if (!geladeira || !ip) return
     const supa = getSupa()
@@ -351,22 +437,31 @@ app.post('/esp32/heartbeat', async (req, res) => {
 })
 
 // ─── HELPERS ──────────────────────────────────────────────────────
+
 function detectarTipo(msg) {
-  const tipo = msg.type
-  if (tipo === 'image') return 'image'
-  if (tipo === 'document') return 'document'
-  if (tipo === 'audio') return 'audio'
-  if (tipo === 'video') return 'video'
+  if (msg.type === 'interactive') return 'interactive'
+  if (msg.type === 'image') return 'image'
+  if (msg.type === 'document') return 'document'
+  if (msg.type === 'audio') return 'audio'
+  if (msg.type === 'video') return 'video'
   return 'text'
 }
 
 function extrairTexto(msg, tipo) {
   if (tipo === 'text') return msg.text?.body || ''
   if (tipo === 'image') return msg.image?.caption || ''
+  if (tipo === 'interactive') return msg.interactive?.button_reply?.title || ''
   return ''
+}
+
+function extrairButtonId(msg) {
+  if (msg.type === 'interactive' && msg.interactive?.type === 'button_reply') {
+    return msg.interactive.button_reply.id
+  }
+  return null
 }
 
 // ─── START ────────────────────────────────────────────────────────
 app.listen(config.PORT, () => {
-  console.log(`✅ SelfStore Bot rodando na porta ${config.PORT}`)
+  console.log(`SelfStore Bot v2 rodando na porta ${config.PORT}`)
 })

@@ -28,4 +28,7 @@ module.exports = {
 
   // Chave secreta compartilhada com o Raspberry Pi (polling)
   ESP32_SECRET: process.env.ESP32_SECRET || 'troque-por-uma-chave-secreta-forte',
+
+  // URL dos Termos e Condições
+  LINK_TC: process.env.LINK_TC || 'https://selfstore-bot-production.up.railway.app/termos',
 }

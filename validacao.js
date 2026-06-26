@@ -16,18 +16,40 @@ function formatarCPF(cpf) {
   return limpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')
 }
 
-function calcularIdade(dataNasc) {
-  let nasc
-  if (typeof dataNasc === 'string' && dataNasc.includes('/')) {
-    const [dia, mes, ano] = dataNasc.split('/')
-    nasc = new Date(parseInt(ano), parseInt(mes) - 1, parseInt(dia))
-  } else if (typeof dataNasc === 'string' && /^\d{4}-\d{2}-\d{2}/.test(dataNasc)) {
-    const [ano, mes, dia] = dataNasc.split('-')
-    nasc = new Date(parseInt(ano), parseInt(mes) - 1, parseInt(dia))
-  } else {
-    nasc = new Date(dataNasc)
+// Aceita DD/MM/AAAA ou DD/MM/AA (regra de seculo: AA <= 30 -> 2000, AA > 30 -> 1900)
+function parseDataNascimento(dataNasc) {
+  if (!dataNasc || typeof dataNasc !== 'string') return null
+  const str = dataNasc.trim()
+
+  // Formato DD/MM/AAAA
+  const matchFull = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (matchFull) {
+    const [, dia, mes, ano] = matchFull
+    return new Date(parseInt(ano), parseInt(mes) - 1, parseInt(dia))
   }
-  if (isNaN(nasc.getTime())) return null
+
+  // Formato DD/MM/AA
+  const matchShort = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/)
+  if (matchShort) {
+    const [, dia, mes, aa] = matchShort
+    const aaNum = parseInt(aa)
+    const ano = aaNum <= 30 ? 2000 + aaNum : 1900 + aaNum
+    return new Date(ano, parseInt(mes) - 1, parseInt(dia))
+  }
+
+  // Formato ISO YYYY-MM-DD (vem do banco)
+  const matchISO = str.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  if (matchISO) {
+    const [, ano, mes, dia] = matchISO
+    return new Date(parseInt(ano), parseInt(mes) - 1, parseInt(dia))
+  }
+
+  return null
+}
+
+function calcularIdade(dataNasc) {
+  const nasc = typeof dataNasc === 'string' ? parseDataNascimento(dataNasc) : new Date(dataNasc)
+  if (!nasc || isNaN(nasc.getTime())) return null
   const hoje = new Date()
   let idade = hoje.getFullYear() - nasc.getFullYear()
   if (hoje < new Date(hoje.getFullYear(), nasc.getMonth(), nasc.getDate())) idade--
@@ -41,11 +63,23 @@ function isMaiorDeIdade(dataNasc) {
 }
 
 function validarDataNascimento(dataNasc) {
+  const nasc = parseDataNascimento(dataNasc)
+  if (!nasc || isNaN(nasc.getTime())) return { valida: false, motivo: 'Data inválida' }
   const idade = calcularIdade(dataNasc)
-  if (idade === null) return { valida: false, motivo: 'Data inválida' }
   if (idade < 0) return { valida: false, motivo: 'Data no futuro' }
   if (idade > 120) return { valida: false, motivo: 'Data muito antiga' }
   return { valida: true, idade }
+}
+
+function validarNomeCompleto(nome) {
+  if (!nome || typeof nome !== 'string') return false
+  const partes = nome.trim().split(/\s+/)
+  return partes.length >= 2 && partes.every(p => p.length >= 1)
+}
+
+function validarUnidade(unidade) {
+  if (!unidade || typeof unidade !== 'string') return false
+  return /\d/.test(unidade.trim())
 }
 
 function validarTelefone(tel) {
@@ -53,75 +87,56 @@ function validarTelefone(tel) {
   return limpo.length >= 10 && limpo.length <= 13
 }
 
-// ─── NORMALIZADOR DE CELULAR ROBUSTO ──────────────────────────────
-// Regras brasileiras de telecom:
-// - Remove tudo que não é número
-// - Remove DDI 55 se já presente
-// - Se sobrar 10 dígitos (DDD + 8 número): insere o 9 após DDD
-// - Se sobrar 11 dígitos (DDD + 9 número): mantém
-// - Adiciona 55 no início
-// Resultado sempre: 55 + DDD(2) + 9 + número(8) = 13 dígitos
-
 function normalizarCelular(tel) {
   if (!tel) return null
-
-  // Remove tudo que não é dígito
   let digitos = String(tel).replace(/\D/g, '')
-
-  // Remove DDI do Brasil se presente no início
-  if (digitos.startsWith('55') && digitos.length > 11) {
-    digitos = digitos.slice(2)
-  }
-
-  // Remove o 0 de discagem interurbana se presente
-  if (digitos.startsWith('0') && digitos.length > 11) {
-    digitos = digitos.slice(1)
-  }
-
-  // Agora deve ter 10 ou 11 dígitos
-  if (digitos.length === 10) {
-    // DDD (2) + número (8) — falta o 9
-    // Insere o 9 após o DDD
-    digitos = digitos.slice(0, 2) + '9' + digitos.slice(2)
-  }
-
-  // Valida: deve ter 11 dígitos agora
+  if (digitos.startsWith('55') && digitos.length > 11) digitos = digitos.slice(2)
+  if (digitos.startsWith('0') && digitos.length > 11) digitos = digitos.slice(1)
+  if (digitos.length === 10) digitos = digitos.slice(0, 2) + '9' + digitos.slice(2)
   if (digitos.length !== 11) return null
-
-  // Garante que o 3º dígito é 9 (celular)
-  // Se for 6, 7 ou 8, também insere o 9 (números muito antigos)
-  const ddd = digitos.slice(0, 2)
   const resto = digitos.slice(2)
   if (!['9','8','7','6'].includes(resto[0])) return null
-
-  // Normaliza: garante 9 como primeiro dígito do número
-  let numero = resto
-  if (numero.length === 8) {
-    numero = '9' + numero
-  }
-
-  return '55' + ddd + numero
+  return '55' + digitos
 }
 
-// Formata para exibição: (11) 99999-9999
 function formatarCelular(celular) {
   const limpo = String(celular).replace(/\D/g, '').replace(/^55/, '')
-  if (limpo.length === 11) {
-    return `(${limpo.slice(0,2)}) ${limpo.slice(2,7)}-${limpo.slice(7)}`
-  }
-  if (limpo.length === 10) {
-    return `(${limpo.slice(0,2)}) ${limpo.slice(2,6)}-${limpo.slice(6)}`
-  }
+  if (limpo.length === 11) return `(${limpo.slice(0,2)}) ${limpo.slice(2,7)}-${limpo.slice(7)}`
+  if (limpo.length === 10) return `(${limpo.slice(0,2)}) ${limpo.slice(2,6)}-${limpo.slice(6)}`
   return celular
+}
+
+// Normaliza data para formato DD/MM/AAAA (exibicao)
+function formatarDataNasc(dataNasc) {
+  const nasc = parseDataNascimento(dataNasc)
+  if (!nasc) return dataNasc
+  const d = String(nasc.getDate()).padStart(2, '0')
+  const m = String(nasc.getMonth() + 1).padStart(2, '0')
+  const a = nasc.getFullYear()
+  return `${d}/${m}/${a}`
+}
+
+// Converte para ISO YYYY-MM-DD (banco)
+function dataParaISO(dataNasc) {
+  const nasc = parseDataNascimento(dataNasc)
+  if (!nasc) return null
+  const d = String(nasc.getDate()).padStart(2, '0')
+  const m = String(nasc.getMonth() + 1).padStart(2, '0')
+  return `${nasc.getFullYear()}-${m}-${d}`
 }
 
 module.exports = {
   validarCPF,
   formatarCPF,
+  parseDataNascimento,
   calcularIdade,
   isMaiorDeIdade,
   validarDataNascimento,
+  validarNomeCompleto,
+  validarUnidade,
   validarTelefone,
   normalizarCelular,
   formatarCelular,
+  formatarDataNasc,
+  dataParaISO,
 }
