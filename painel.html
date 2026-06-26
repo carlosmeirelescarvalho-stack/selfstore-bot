@@ -255,14 +255,14 @@ tr:hover td{background:var(--bg)}
       <i class="ti ti-list"></i>Logs de acesso
     </a>
     <div class="nav-section">Configuração</div>
-    <a class="nav-item" onclick="nav('geladeiras',this)">
-      <i class="ti ti-device-fridge"></i>Geladeiras
+    <a class="nav-item" onclick="nav('admins',this)">
+      <i class="ti ti-shield"></i>Admins WhatsApp
     </a>
     <a class="nav-item" onclick="nav('condominios',this)">
       <i class="ti ti-building"></i>Condomínios
     </a>
-    <a class="nav-item" onclick="nav('admins',this)">
-      <i class="ti ti-shield"></i>Admins WhatsApp
+    <a class="nav-item" onclick="nav('geladeiras',this)">
+      <i class="ti ti-snowflake"></i>Geladeiras
     </a>
   </div>
   <div class="sidebar-footer">
@@ -504,24 +504,84 @@ tr:hover td{background:var(--bg)}
 <div class="modal-overlay" id="modal-admin">
   <div class="modal">
     <div class="modal-header">
-      <div class="modal-title">Adicionar admin WhatsApp</div>
+      <div class="modal-title" id="modal-admin-title">Adicionar admin WhatsApp</div>
       <button class="modal-close" onclick="fecharModal('modal-admin')"><i class="ti ti-x"></i></button>
     </div>
     <div class="modal-body">
+      <input type="hidden" id="admin-edit-id">
       <div class="form-group">
         <label class="form-label">Nome</label>
         <input class="form-input" id="admin-nome" type="text" placeholder="Nome do admin">
       </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Celular (com DDD, sem +55)</label>
+          <input class="form-input" id="admin-cel" type="text" placeholder="11 99999-9999">
+        </div>
+        <div class="form-group">
+          <label class="form-label">CPF</label>
+          <input class="form-input" id="admin-cpf" type="text" placeholder="000.000.000-00" oninput="fmtCPF(this)">
+          <div class="form-hint">Vincula à foto do morador com mesmo CPF</div>
+        </div>
+      </div>
       <div class="form-group">
-        <label class="form-label">Celular (com DDD, sem +55)</label>
-        <input class="form-input" id="admin-cel" type="text" placeholder="11 99999-9999">
-        <div class="form-hint">O sistema normaliza automaticamente para o formato correto</div>
+        <label class="form-label">Condomínios vinculados</label>
+        <div id="admin-condominios-checks" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px"></div>
+        <div class="form-hint">Recebe notificações apenas dos condomínios selecionados</div>
       </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-secondary" onclick="fecharModal('modal-admin')">Cancelar</button>
-      <button class="btn btn-primary" onclick="salvarAdmin()"><i class="ti ti-check"></i>Adicionar</button>
+      <button class="btn btn-primary" onclick="salvarAdmin()"><i class="ti ti-check"></i>Salvar</button>
     </div>
+  </div>
+</div>
+
+<!-- MODAL: EDITAR MORADOR -->
+<div class="modal-overlay" id="modal-edit-morador">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Editar morador</div>
+      <button class="modal-close" onclick="fecharModal('modal-edit-morador')"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-mor-id">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Nome completo</label>
+          <input class="form-input" id="edit-mor-nome" type="text">
+        </div>
+        <div class="form-group">
+          <label class="form-label">CPF</label>
+          <input class="form-input" id="edit-mor-cpf" type="text" oninput="fmtCPF(this)">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Bloco</label>
+          <input class="form-input" id="edit-mor-bloco" type="text">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Unidade</label>
+          <input class="form-input" id="edit-mor-unidade" type="text">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Celular WhatsApp</label>
+        <input class="form-input" id="edit-mor-cel" type="text">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="fecharModal('modal-edit-morador')">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarEdicaoMorador()"><i class="ti ti-check"></i>Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: FOTO ZOOM -->
+<div class="modal-overlay" id="modal-foto" onclick="fecharModal('modal-foto')">
+  <div style="max-width:90vw;max-height:90vh;display:flex;align-items:center;justify-content:center">
+    <img id="modal-foto-img" src="" style="max-width:100%;max-height:85vh;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,.4)">
   </div>
 </div>
 
@@ -665,22 +725,24 @@ async function carregarMoradores(busca='') {
     el.innerHTML='<div class="empty"><i class="ti ti-users"></i><p>Nenhum morador encontrado</p></div>'; return
   }
   el.innerHTML = `<div class="table-wrap"><table>
-    <thead><tr><th>Morador</th><th>Unidade</th><th>Status</th><th>T&C</th><th>Ações</th></tr></thead>
+    <thead><tr><th>Foto</th><th>Morador</th><th>Unidade</th><th>Status</th><th>T&C</th><th>Ações</th></tr></thead>
     <tbody>${moradores.map(m => `
       <tr>
-        <td><div style="display:flex;align-items:center;gap:8px">
-          <div class="avatar">${iniciais(m.nome)}</div>
-          <div><div class="td-name">${m.nome}</div>
-          <div class="td-meta">CPF: ${fmtCPFstr(m.cpf)}</div></div>
-        </div></td>
+        <td>${m.foto_url
+          ? `<img src="${m.foto_url}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;cursor:pointer" onclick="abrirFoto('${m.foto_url}')">`
+          : `<div class="avatar">${iniciais(m.nome)}</div>`}</td>
+        <td><div><div class="td-name">${m.nome}</div>
+          <div class="td-meta">CPF: ${fmtCPFstr(m.cpf)}</div></div></td>
         <td><div>${m.condominios?.nome||'—'}</div>
           <div class="td-meta">${m.bloco} • Apto ${m.unidade}</div></td>
         <td><span class="badge badge-${m.status}">${{pendente:'Pendente',aprovado:'Aprovado',rejeitado:'Rejeitado'}[m.status]}</span></td>
         <td><span class="badge ${m.aceite_tc?'badge-approved':'badge-pending'}" style="font-size:10px">${m.aceite_tc?'Aceito':'Pendente'}</span></td>
         <td><div class="td-actions">
-          ${m.status!=='aprovado'?`<button class="btn btn-sm btn-success" onclick="aprovar('${m.id}','${m.nome}')"><i class="ti ti-check"></i></button>`:''}
-          ${m.status!=='rejeitado'?`<button class="btn btn-sm btn-danger" onclick="rejeitar('${m.id}')"><i class="ti ti-x"></i></button>`:''}
-          ${m.status==='aprovado'?`<button class="btn btn-sm btn-secondary" onclick="bloquear('${m.id}')"><i class="ti ti-ban"></i></button>`:''}
+          ${m.status!=='aprovado'?`<button class="btn btn-sm btn-success" onclick="aprovar('${m.id}','${m.nome}')" title="Aprovar"><i class="ti ti-check"></i></button>`:''}
+          ${m.status!=='rejeitado'?`<button class="btn btn-sm btn-danger" onclick="rejeitar('${m.id}')" title="Rejeitar"><i class="ti ti-x"></i></button>`:''}
+          ${m.status==='aprovado'?`<button class="btn btn-sm btn-secondary" onclick="bloquear('${m.id}')" title="Bloquear"><i class="ti ti-ban"></i></button>`:''}
+          <button class="btn btn-sm btn-secondary" onclick="abrirEditMorador(${JSON.stringify(m).replace(/"/g,'&quot;')})" title="Editar"><i class="ti ti-pencil"></i></button>
+          <button class="btn btn-sm btn-danger" onclick="deletarMorador('${m.id}','${m.nome.replace(/'/g,"\\'")}')" title="Excluir"><i class="ti ti-trash"></i></button>
         </div></td>
       </tr>`).join('')}
     </tbody></table></div>`
@@ -814,20 +876,38 @@ async function carregarGeladeiras() {
   const { geladeiras } = await api('/admin/geladeiras').catch(()=>({geladeiras:[]}))
   const el = document.getElementById('geladeiras-lista')
   if(!geladeiras||geladeiras.length===0) {
-    el.innerHTML='<div class="empty"><i class="ti ti-device-fridge"></i><p>Nenhuma geladeira</p></div>'; return
+    el.innerHTML='<div class="empty"><i class="ti ti-snowflake"></i><p>Nenhuma geladeira</p></div>'; return
   }
   el.innerHTML = geladeiras.map(g=>`
     <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
       <div style="width:36px;height:36px;border-radius:8px;background:var(--accent-l);
         display:flex;align-items:center;justify-content:center;color:var(--accent);font-size:18px">
-        <i class="ti ti-device-fridge"></i>
+        <i class="ti ti-snowflake"></i>
       </div>
       <div style="flex:1">
         <div style="font-weight:500;font-size:13px">${g.nome}</div>
-        <div style="font-size:11px;color:var(--muted);font-family:'DM Mono',monospace">${g.esp32_ip||'IP não configurado'} · ${g.flag_alcoolica?'alcóolica':'não alcoólica'}</div>
+        <div style="font-size:11px;color:var(--muted)">${g.condominios?.nome||'—'} · <span style="font-family:'DM Mono',monospace">${g.esp32_ip||'IP não configurado'}</span></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span id="flag18-label-${g.id}" style="font-size:11px;color:${g.flag_alcoolica?'var(--warn)':'var(--muted)'};white-space:nowrap">
+          +18 ${g.flag_alcoolica?'<strong>Ativo</strong>':'Inativo'}
+        </span>
+        <label class="toggle">
+          <input type="checkbox" ${g.flag_alcoolica?'checked':''} onchange="toggleFlag18('${g.id}',this.checked)">
+          <span class="slider"></span>
+        </label>
       </div>
       <span style="width:8px;height:8px;border-radius:50%;background:${g.esp32_ip?'var(--accent)':'var(--border)'}"></span>
     </div>`).join('')
+}
+async function toggleFlag18(id, val) {
+  await api(`/admin/geladeiras/${id}`, {method:'PATCH', body:JSON.stringify({flag_alcoolica:val})})
+  const label = document.getElementById('flag18-label-'+id)
+  if(label) {
+    label.style.color = val ? 'var(--warn)' : 'var(--muted)'
+    label.innerHTML = '+18 '+(val?'<strong>Ativo</strong>':'Inativo')
+  }
+  notif(`Flag +18 ${val?'ativada':'desativada'}`)
 }
 
 // ── CONDOMÍNIOS ──────────────────────────────────────────────────
@@ -924,36 +1004,152 @@ async function toggleAutoAprov(id, val) {
   notif(`Auto-aprovação ${val?'ativada':'desativada'}`)
 }
 
+// ── MORADOR EDIT / DELETE / FOTO ─────────────────────────────────
+function abrirFoto(url) {
+  document.getElementById('modal-foto-img').src = url
+  document.getElementById('modal-foto').classList.add('open')
+}
+function abrirEditMorador(m) {
+  document.getElementById('edit-mor-id').value = m.id
+  document.getElementById('edit-mor-nome').value = m.nome || ''
+  document.getElementById('edit-mor-cpf').value = fmtCPFstr(m.cpf) || ''
+  document.getElementById('edit-mor-bloco').value = m.bloco || ''
+  document.getElementById('edit-mor-unidade').value = m.unidade || ''
+  document.getElementById('edit-mor-cel').value = m.celular_whatsapp || ''
+  document.getElementById('modal-edit-morador').classList.add('open')
+}
+async function salvarEdicaoMorador() {
+  const id = document.getElementById('edit-mor-id').value
+  const campos = {
+    nome: document.getElementById('edit-mor-nome').value.trim(),
+    cpf: document.getElementById('edit-mor-cpf').value.replace(/\D/g,''),
+    bloco: document.getElementById('edit-mor-bloco').value.trim(),
+    unidade: document.getElementById('edit-mor-unidade').value.trim(),
+    celular_whatsapp: document.getElementById('edit-mor-cel').value.trim(),
+  }
+  await api(`/admin/moradores/${id}`, {method:'PUT', body:JSON.stringify(campos)})
+  fecharModal('modal-edit-morador')
+  notif('Morador atualizado!')
+  carregarMoradores()
+}
+async function deletarMorador(id, nome) {
+  if(!confirm(`Excluir permanentemente ${nome}? Esta ação não pode ser desfeita.`)) return
+  await api(`/admin/moradores/${id}`, {method:'DELETE'})
+  notif('Morador excluído.')
+  carregarMoradores(); carregarDashboard()
+}
+
 // ── ADMINS ───────────────────────────────────────────────────────
+let adminsCache = []
 async function carregarAdmins() {
   const { admins } = await api('/admin/admins').catch(()=>({admins:[]}))
+  adminsCache = admins || []
   const el = document.getElementById('admins-lista')
   if(!admins||admins.length===0) {
     el.innerHTML='<div class="empty"><i class="ti ti-shield"></i><p>Nenhum admin cadastrado</p></div>'; return
   }
   el.innerHTML = `<div class="table-wrap"><table>
-    <thead><tr><th>Nome</th><th>Celular</th><th>Ações</th></tr></thead>
-    <tbody>${admins.map(a=>`
-      <tr>
-        <td>${a.nome||'—'}</td>
+    <thead><tr><th>Foto</th><th>Nome</th><th>CPF</th><th>Celular</th><th>Condomínios</th><th>Ações</th></tr></thead>
+    <tbody>${admins.map(a=>{
+      const conds = (a.admins_condominios||[]).map(ac=>ac.condominios?.nome).filter(Boolean)
+      const fotoMorador = a._foto_morador || null
+      return `<tr>
+        <td>${fotoMorador
+          ? `<img src="${fotoMorador}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;cursor:pointer" onclick="abrirFoto('${fotoMorador}')">`
+          : `<div class="avatar">${iniciais(a.nome||'?')}</div>`}</td>
+        <td class="td-name">${a.nome||'—'}</td>
+        <td style="font-size:12px">${a.cpf?fmtCPFstr(a.cpf):'—'}</td>
         <td style="font-family:'DM Mono',monospace;font-size:12px">${a.celular}</td>
-        <td><button class="btn btn-sm btn-danger" onclick="removerAdmin('${a.celular}')">Remover</button></td>
-      </tr>`).join('')}
+        <td>${conds.length?conds.map(c=>`<span class="badge badge-approved" style="font-size:10px;margin:1px">${c}</span>`).join(' '):'<span style="color:var(--muted);font-size:11px">Nenhum</span>'}</td>
+        <td><div class="td-actions">
+          <button class="btn btn-sm btn-secondary" onclick="abrirEditAdmin('${a.id}')" title="Editar"><i class="ti ti-pencil"></i></button>
+          <button class="btn btn-sm btn-danger" onclick="removerAdmin('${a.id}','${(a.nome||'').replace(/'/g,"\\'")}')" title="Remover"><i class="ti ti-trash"></i></button>
+        </div></td>
+      </tr>`}).join('')}
     </tbody></table></div>`
+
+  // Buscar fotos de moradores vinculados por CPF
+  for(const a of admins) {
+    if(!a.cpf) continue
+    const cpfLimpo = a.cpf.replace(/\D/g,'')
+    const { moradores } = await api(`/admin/moradores?busca=${cpfLimpo}&limit=1`).catch(()=>({moradores:[]}))
+    if(moradores?.[0]?.foto_url) {
+      a._foto_morador = moradores[0].foto_url
+    }
+  }
+  // Re-render with photos
+  const temFoto = admins.some(a=>a._foto_morador)
+  if(temFoto) {
+    const tbody = el.querySelector('tbody')
+    if(tbody) {
+      tbody.innerHTML = admins.map(a=>{
+        const conds = (a.admins_condominios||[]).map(ac=>ac.condominios?.nome).filter(Boolean)
+        return `<tr>
+          <td>${a._foto_morador
+            ? `<img src="${a._foto_morador}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;cursor:pointer" onclick="abrirFoto('${a._foto_morador}')">`
+            : `<div class="avatar">${iniciais(a.nome||'?')}</div>`}</td>
+          <td class="td-name">${a.nome||'—'}</td>
+          <td style="font-size:12px">${a.cpf?fmtCPFstr(a.cpf):'—'}</td>
+          <td style="font-family:'DM Mono',monospace;font-size:12px">${a.celular}</td>
+          <td>${conds.length?conds.map(c=>`<span class="badge badge-approved" style="font-size:10px;margin:1px">${c}</span>`).join(' '):'<span style="color:var(--muted);font-size:11px">Nenhum</span>'}</td>
+          <td><div class="td-actions">
+            <button class="btn btn-sm btn-secondary" onclick="abrirEditAdmin('${a.id}')" title="Editar"><i class="ti ti-pencil"></i></button>
+            <button class="btn btn-sm btn-danger" onclick="removerAdmin('${a.id}','${(a.nome||'').replace(/'/g,"\\'")}')" title="Remover"><i class="ti ti-trash"></i></button>
+          </div></td>
+        </tr>`
+      }).join('')
+    }
+  }
 }
-function abrirModalAdmin() { document.getElementById('modal-admin').classList.add('open') }
+function abrirModalAdmin() {
+  document.getElementById('admin-edit-id').value = ''
+  document.getElementById('admin-nome').value = ''
+  document.getElementById('admin-cel').value = ''
+  document.getElementById('admin-cpf').value = ''
+  document.getElementById('modal-admin-title').textContent = 'Adicionar admin WhatsApp'
+  renderAdminCondChecks([])
+  document.getElementById('modal-admin').classList.add('open')
+}
+function abrirEditAdmin(id) {
+  const a = adminsCache.find(x=>x.id===id)
+  if(!a) return
+  document.getElementById('admin-edit-id').value = a.id
+  document.getElementById('admin-nome').value = a.nome || ''
+  document.getElementById('admin-cel').value = a.celular || ''
+  document.getElementById('admin-cpf').value = a.cpf ? fmtCPFstr(a.cpf) : ''
+  document.getElementById('modal-admin-title').textContent = 'Editar admin'
+  const condIds = (a.admins_condominios||[]).map(ac=>ac.condominio_id)
+  renderAdminCondChecks(condIds)
+  document.getElementById('modal-admin').classList.add('open')
+}
+function renderAdminCondChecks(selectedIds) {
+  document.getElementById('admin-condominios-checks').innerHTML = condominiosCache.map(c=>`
+    <label style="display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;padding:4px 8px;border:1px solid var(--border);border-radius:6px;background:${selectedIds.includes(c.id)?'var(--accent-l)':'var(--card)'}">
+      <input type="checkbox" value="${c.id}" ${selectedIds.includes(c.id)?'checked':''} style="accent-color:var(--accent)">
+      ${c.nome}
+    </label>`).join('')
+}
 async function salvarAdmin() {
+  const editId = document.getElementById('admin-edit-id').value
   const nome = document.getElementById('admin-nome').value.trim()
   const cel = document.getElementById('admin-cel').value.trim()
+  const cpf = document.getElementById('admin-cpf').value.replace(/\D/g,'')
+  const checks = document.querySelectorAll('#admin-condominios-checks input[type=checkbox]:checked')
+  const condominio_ids = Array.from(checks).map(c=>c.value)
   if(!cel) { alert('Informe o celular'); return }
-  await api('/admin/admins', {method:'POST', body:JSON.stringify({celular:cel, nome})})
+  if(editId) {
+    await api(`/admin/admins/${editId}`, {method:'PATCH', body:JSON.stringify({nome, celular:cel, cpf:cpf||null, condominio_ids})})
+    notif('Admin atualizado!')
+  } else {
+    await api('/admin/admins', {method:'POST', body:JSON.stringify({celular:cel, nome, cpf:cpf||null, condominio_ids})})
+    notif('Admin adicionado!')
+  }
   fecharModal('modal-admin')
-  notif('Admin adicionado!')
   carregarAdmins()
 }
-async function removerAdmin(cel) {
-  if(!confirm('Remover este admin?')) return
-  await api(`/admin/admins/${encodeURIComponent(cel)}`, {method:'DELETE'})
+async function removerAdmin(id, nome) {
+  if(!confirm(`Remover admin ${nome||''}?`)) return
+  await api(`/admin/admins/${id}`, {method:'DELETE'})
   notif('Admin removido.')
   carregarAdmins()
 }

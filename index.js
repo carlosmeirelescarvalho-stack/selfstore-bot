@@ -306,6 +306,28 @@ app.patch('/admin/moradores/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
+app.put('/admin/moradores/:id', async (req, res) => {
+  try {
+    const morador = await db.atualizarMorador(req.params.id, req.body)
+    res.json({ morador })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+app.delete('/admin/moradores/:id', async (req, res) => {
+  try {
+    const supa = getSupa()
+    const { data: morador } = await supa.from('moradores').select('*, condominios(*)').eq('id', req.params.id).single()
+    if (morador?.foto_url && morador?.condominios?.idface_ip) {
+      try {
+        const { removerRostoIDFace } = require('./idface')
+        if (removerRostoIDFace) await removerRostoIDFace(morador.condominios.idface_ip, morador.condominios.idface_senha, morador.id, morador.condominios.idface_user || 'admin')
+      } catch(e) { console.error('Erro ao remover do iDFace:', e.message) }
+    }
+    await db.deletarMorador(req.params.id)
+    res.json({ ok: true })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
 app.post('/admin/moradores', async (req, res) => {
   try {
     const resultado = await cadastrarManual(req.body)
@@ -341,15 +363,27 @@ app.get('/admin/admins', async (req, res) => {
 
 app.post('/admin/admins', async (req, res) => {
   try {
-    const { celular, nome } = req.body
-    await db.adicionarAdmin(celular, nome)
+    const { celular, nome, cpf, condominio_ids } = req.body
+    const admin = await db.adicionarAdmin(celular, nome, cpf, condominio_ids)
+    res.json({ admin })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+app.patch('/admin/admins/:id', async (req, res) => {
+  try {
+    const { nome, cpf, celular, condominio_ids } = req.body
+    const campos = {}
+    if (nome !== undefined) campos.nome = nome
+    if (cpf !== undefined) campos.cpf = cpf
+    if (celular !== undefined) campos.celular = celular
+    await db.atualizarAdmin(req.params.id, campos, condominio_ids)
     res.json({ ok: true })
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
-app.delete('/admin/admins/:celular', async (req, res) => {
+app.delete('/admin/admins/:id', async (req, res) => {
   try {
-    await db.removerAdmin(req.params.celular)
+    await db.removerAdmin(req.params.id)
     res.json({ ok: true })
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
@@ -394,6 +428,15 @@ app.get('/admin/geladeiras', async (req, res) => {
     const { data, error } = await supa.from('geladeiras').select('*, condominios(nome)').order('nome')
     if (error) throw error
     res.json({ geladeiras: data })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+app.patch('/admin/geladeiras/:id', async (req, res) => {
+  try {
+    const supa = getSupa()
+    const { data, error } = await supa.from('geladeiras').update(req.body).eq('id', req.params.id).select('*, condominios(nome)').single()
+    if (error) throw error
+    res.json({ geladeira: data })
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 

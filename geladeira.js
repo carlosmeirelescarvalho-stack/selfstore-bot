@@ -88,7 +88,8 @@ async function handleGeladeira(celular, mensagem, buttonId) {
         `⚠️ *Geladeira sem dispositivo*\n\n` +
         `Geladeira: ${geladeira.nome}\n` +
         `Morador tentou abrir: ${morador.nome} (${celular})\n` +
-        `Condomínio: ${geladeira.condominios?.nome || 'N/A'}`
+        `Condomínio: ${geladeira.condominios?.nome || 'N/A'}`,
+        geladeira.condominio_id
       )
       return
     }
