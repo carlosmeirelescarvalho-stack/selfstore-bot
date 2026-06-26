@@ -840,18 +840,23 @@ async function carregarCondominios2() {
   const el = document.getElementById('condominios-lista')
   if(!condominiosCache.length) { el.innerHTML='<div class="empty"><p>Nenhum condomínio</p></div>'; return }
   el.innerHTML = condominiosCache.map(c=>`
-    <div class="toggle-row">
-      <div style="flex:1">
+    <div class="toggle-row" style="flex-wrap:wrap;gap:8px">
+      <div style="flex:1;min-width:140px">
         <div style="font-weight:500">${c.nome}</div>
         <div style="font-size:11px;color:var(--muted)">iDFace: ${c.idface_ip||'não configurado'}</div>
       </div>
-      <button class="btn btn-sm btn-secondary" onclick="verBlocos('${c.id}','${c.nome}')" style="margin-right:10px">
+      <button class="btn btn-sm btn-secondary" onclick="verBlocos('${c.id}','${c.nome}')">
         <i class="ti ti-building"></i>Blocos
       </button>
-      <label class="toggle">
-        <input type="checkbox" ${c.flag_auto_aprovacao?'checked':''} onchange="toggleAutoAprov('${c.id}',this.checked)">
-        <span class="slider"></span>
-      </label>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:11px;color:${c.flag_auto_aprovacao?'var(--success)':'var(--muted)'};white-space:nowrap">
+          Aprovação automática: <strong>${c.flag_auto_aprovacao?'Ativo':'Inativo'}</strong>
+        </span>
+        <label class="toggle">
+          <input type="checkbox" ${c.flag_auto_aprovacao?'checked':''} onchange="toggleAutoAprov('${c.id}',this.checked)">
+          <span class="slider"></span>
+        </label>
+      </div>
     </div>`).join('')
 }
 async function verBlocos(condId, condNome) {
