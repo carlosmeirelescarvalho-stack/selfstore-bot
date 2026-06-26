@@ -170,32 +170,31 @@ async function processarMensagemMeta(msg, value) {
 // ─── FLUXO 0 — Welcome & Routing ─────────────────────────────────
 
 async function handleFluxo0(celular, texto, buttonId) {
-  const morador = await db.buscarMoradorPorCelular(celular)
+  console.log('Fluxo0:', { celular, texto, buttonId })
 
-  // Botão "Fazer cadastro agora" vindo da geladeira
   if (buttonId === 'iniciar_cadastro') {
     await iniciarCadastro(celular)
     return
   }
 
+  if (buttonId === 'fluxo0_ajuda') {
+    await iniciarAtendimentoHumano(celular)
+    return
+  }
+
+  const morador = await db.buscarMoradorPorCelular(celular)
+
   if (morador && morador.status === 'aprovado') {
-    // Já cadastrado
     await enviarBotoes(celular, MSG.jaCadastrado(), [
       { id: 'fluxo0_ajuda', titulo: 'Atendimento humano' },
     ])
   } else if (morador && morador.status === 'pendente') {
     await enviarTexto(celular, MSG.acessoNegadoPendente())
   } else {
-    // Não cadastrado
     await enviarBotoes(celular, `${MSG.apresentacao()}\n\n${MSG.naoCadastrado()}`, [
       { id: 'iniciar_cadastro', titulo: 'Fazer cadastro' },
       { id: 'fluxo0_ajuda', titulo: 'Falar com atendente' },
     ])
-  }
-
-  // Se veio de botão atendimento
-  if (buttonId === 'fluxo0_ajuda') {
-    await iniciarAtendimentoHumano(celular)
   }
 }
 
@@ -492,8 +491,8 @@ function extrairTexto(msg, tipo) {
 }
 
 function extrairButtonId(msg) {
-  if (msg.type === 'interactive' && msg.interactive?.type === 'button_reply') {
-    return msg.interactive.button_reply.id
+  if (msg.type === 'interactive') {
+    return msg.interactive?.button_reply?.id || msg.interactive?.list_reply?.id || null
   }
   return null
 }

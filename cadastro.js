@@ -90,6 +90,7 @@ async function processarEtapa(celular, mensagem, tipoMensagem, imagemBase64, but
         return
       }
       dados.nome = nome
+      if (dados._corrigindo) return await voltarConfirmacao(celular, dados)
       await db.salvarSessao(celular, 'cpf', dados)
       await enviarTexto(celular, MSG.coletarCPF())
       break
@@ -107,6 +108,7 @@ async function processarEtapa(celular, mensagem, tipoMensagem, imagemBase64, but
         return
       }
       dados.cpf = cpf
+      if (dados._corrigindo) return await voltarConfirmacao(celular, dados)
       await db.salvarSessao(celular, 'data_nasc', dados)
       await enviarTexto(celular, MSG.coletarDataNasc())
       break
@@ -119,6 +121,7 @@ async function processarEtapa(celular, mensagem, tipoMensagem, imagemBase64, but
         return
       }
       dados.data_nasc = mensagem.trim()
+      if (dados._corrigindo) return await voltarConfirmacao(celular, dados)
       await db.salvarSessao(celular, 'bloco', dados)
       await enviarListaBlocos(celular, dados)
       break
@@ -137,6 +140,7 @@ async function processarEtapa(celular, mensagem, tipoMensagem, imagemBase64, but
         dados.bloco = mensagem.trim()
       }
       delete dados._blocos
+      if (dados._corrigindo) return await voltarConfirmacao(celular, dados)
       await db.salvarSessao(celular, 'unidade', dados)
       await enviarTexto(celular, MSG.coletarUnidade())
       break
@@ -148,6 +152,7 @@ async function processarEtapa(celular, mensagem, tipoMensagem, imagemBase64, but
         return
       }
       dados.unidade = mensagem.trim()
+      if (dados._corrigindo) return await voltarConfirmacao(celular, dados)
       await db.salvarSessao(celular, 'foto', dados)
       await enviarTexto(celular, MSG.coletarFoto())
       break
@@ -158,30 +163,18 @@ async function processarEtapa(celular, mensagem, tipoMensagem, imagemBase64, but
         await enviarTexto(celular, MSG.fotoInvalida())
         return
       }
-      dados._fotoBase64 = true
-      await db.salvarSessao(celular, 'confirmar', dados)
-      // Guarda a foto em memoria temporaria via sessao nao e viavel (muito grande)
-      // Salva no storage ja e usa a URL
       let fotoUrl = null
       try {
         const buffer = Buffer.from(imagemBase64, 'base64')
         fotoUrl = await db.uploadFoto(celular, buffer, 'image/jpeg')
       } catch(e) { console.error('Erro upload foto:', e) }
       dados.foto_url = fotoUrl
-      await db.salvarSessao(celular, 'confirmar', dados)
-      await enviarBotoes(
-        celular,
-        MSG.confirmarDados(dados.nome, dados.cpf, formatarDataNasc(dados.data_nasc), dados.bloco, dados.unidade, dados.condominio_nome),
-        [
-          { id: 'confirmar_sim', titulo: 'Confirmar' },
-          { id: 'confirmar_corrigir', titulo: 'Corrigir' },
-        ]
-      )
-      break
+      return await voltarConfirmacao(celular, dados)
     }
 
     case 'confirmar': {
       if (buttonId === 'confirmar_corrigir') {
+        dados._corrigindo = true
         await db.salvarSessao(celular, 'corrigir', dados)
         await enviarTexto(celular, MSG.corrigirCampo())
         return
@@ -205,6 +198,7 @@ async function processarEtapa(celular, mensagem, tipoMensagem, imagemBase64, but
         await enviarTexto(celular, MSG.corrigirCampo())
         return
       }
+      dados._corrigindo = true
       await db.salvarSessao(celular, etapaDestino, dados)
       const msgMap = {
         nome: MSG.coletarNome(),
@@ -224,6 +218,19 @@ async function processarEtapa(celular, mensagem, tipoMensagem, imagemBase64, but
     default:
       await iniciarCadastro(celular)
   }
+}
+
+async function voltarConfirmacao(celular, dados) {
+  delete dados._corrigindo
+  await db.salvarSessao(celular, 'confirmar', dados)
+  await enviarBotoes(
+    celular,
+    MSG.confirmarDados(dados.nome, dados.cpf, formatarDataNasc(dados.data_nasc), dados.bloco, dados.unidade, dados.condominio_nome),
+    [
+      { id: 'confirmar_sim', titulo: 'Confirmar' },
+      { id: 'confirmar_corrigir', titulo: 'Corrigir' },
+    ]
+  )
 }
 
 async function enviarListaBlocos(celular, dados) {
