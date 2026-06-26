@@ -284,7 +284,8 @@ async function finalizarCadastro(celular, dados, imagemBase64) {
         `Condomínio: ${dados.condominio_nome}\n` +
         `Bloco: ${dados.bloco} • Unidade: ${dados.unidade}\n` +
         `Celular: ${celular}\n\n` +
-        `Acesse o painel para aprovar ou rejeitar.`
+        `Acesse o painel para aprovar ou rejeitar.`,
+        dados.condominio_id
       )
     } catch(e) { console.error('Erro notif admin:', e.message) }
   }

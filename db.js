@@ -239,25 +239,77 @@ async function uploadFoto(celular, buffer, mimetype) {
 async function listarAdmins() {
   const { data, error } = await supabase()
     .from('admins_whatsapp')
-    .select('*')
+    .select('*, admins_condominios(condominio_id, condominios(id, nome))')
     .eq('ativo', true)
   if (error) throw error
   return data || []
 }
 
-async function adicionarAdmin(celular, nome) {
-  const { error } = await supabase()
+async function adicionarAdmin(celular, nome, cpf, condominioIds) {
+  const { data, error } = await supabase()
     .from('admins_whatsapp')
-    .upsert([{ celular, nome, ativo: true }], { onConflict: 'celular' })
+    .upsert([{ celular, nome, cpf: cpf || null, ativo: true }], { onConflict: 'celular' })
+    .select()
+    .single()
   if (error) throw error
+  if (condominioIds?.length && data?.id) {
+    await supabase().from('admins_condominios').delete().eq('admin_id', data.id)
+    const rows = condominioIds.map(cid => ({ admin_id: data.id, condominio_id: cid }))
+    await supabase().from('admins_condominios').insert(rows)
+  }
+  return data
 }
 
-async function removerAdmin(celular) {
+async function atualizarAdmin(id, campos, condominioIds) {
+  const { error } = await supabase()
+    .from('admins_whatsapp')
+    .update(campos)
+    .eq('id', id)
+  if (error) throw error
+  if (condominioIds !== undefined) {
+    await supabase().from('admins_condominios').delete().eq('admin_id', id)
+    if (condominioIds?.length) {
+      const rows = condominioIds.map(cid => ({ admin_id: id, condominio_id: cid }))
+      await supabase().from('admins_condominios').insert(rows)
+    }
+  }
+}
+
+async function removerAdmin(id) {
+  await supabase().from('admins_condominios').delete().eq('admin_id', id)
   const { error } = await supabase()
     .from('admins_whatsapp')
     .update({ ativo: false })
-    .eq('celular', celular)
+    .eq('id', id)
   if (error) throw error
+}
+
+async function buscarAdminsPorCondominio(condominioId) {
+  const { data, error } = await supabase()
+    .from('admins_condominios')
+    .select('admin_id, admins_whatsapp(celular, nome, ativo)')
+    .eq('condominio_id', condominioId)
+  if (error) return []
+  return (data || [])
+    .filter(r => r.admins_whatsapp?.ativo)
+    .map(r => r.admins_whatsapp)
+}
+
+async function deletarMorador(id) {
+  await supabase().from('logs_acesso').delete().eq('morador_id', id)
+  const { error } = await supabase().from('moradores').delete().eq('id', id)
+  if (error) throw error
+}
+
+async function atualizarMorador(id, campos) {
+  const { data, error } = await supabase()
+    .from('moradores')
+    .update({ ...campos, atualizado_em: new Date().toISOString() })
+    .eq('id', id)
+    .select('*, condominios(*)')
+    .single()
+  if (error) throw error
+  return data
 }
 
 async function listarMoradoresPorStatus(status) {
@@ -317,7 +369,11 @@ module.exports = {
   uploadFoto,
   listarAdmins,
   adicionarAdmin,
+  atualizarAdmin,
   removerAdmin,
+  buscarAdminsPorCondominio,
+  deletarMorador,
+  atualizarMorador,
   listarMoradoresPorStatus,
   contarPendentes,
   buscarMoradorParaAcao,

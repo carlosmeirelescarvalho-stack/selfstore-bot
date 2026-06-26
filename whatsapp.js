@@ -56,9 +56,25 @@ async function enviarBotoes(celular, corpo, botoes) {
   return res.json()
 }
 
-async function notificarAdmin(texto) {
-  if (!config.ADMIN_CELULAR) return
-  return enviarTexto(config.ADMIN_CELULAR, `🔔 *Admin SelfStore*\n\n${texto}`)
+async function notificarAdmin(texto, condominioId) {
+  const db = require('./db')
+  const destinatarios = []
+
+  if (condominioId) {
+    const admins = await db.buscarAdminsPorCondominio(condominioId)
+    destinatarios.push(...admins.map(a => a.celular))
+  }
+
+  // Fallback: ADMIN_CELULAR se nenhum admin vinculado
+  if (destinatarios.length === 0 && config.ADMIN_CELULAR) {
+    destinatarios.push(config.ADMIN_CELULAR)
+  }
+
+  for (const cel of [...new Set(destinatarios)]) {
+    try {
+      await enviarTexto(cel, `🔔 *Admin SelfStore*\n\n${texto}`)
+    } catch(e) { console.error('Erro notif admin', cel, e.message) }
+  }
 }
 
 function dentroHorarioComercial() {
