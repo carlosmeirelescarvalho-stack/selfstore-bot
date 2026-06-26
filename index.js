@@ -425,6 +425,16 @@ app.post('/admin/blocos', async (req, res) => {
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
+app.patch('/admin/blocos/:id', async (req, res) => {
+  try {
+    const { nome } = req.body
+    const supa = getSupa()
+    const { data, error } = await supa.from('blocos').update({ nome }).eq('id', req.params.id).select().single()
+    if (error) throw error
+    res.json({ bloco: data })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
 app.delete('/admin/blocos/:id', async (req, res) => {
   try {
     const supa = getSupa()

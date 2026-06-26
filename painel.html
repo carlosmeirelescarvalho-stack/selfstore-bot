@@ -849,7 +849,7 @@ async function carregarCondominios2() {
         <i class="ti ti-building"></i>Blocos
       </button>
       <div style="display:flex;align-items:center;gap:8px">
-        <span style="font-size:11px;color:${c.flag_auto_aprovacao?'var(--success)':'var(--muted)'};white-space:nowrap">
+        <span id="auto-label-${c.id}" style="font-size:11px;color:${c.flag_auto_aprovacao?'var(--success)':'var(--muted)'};white-space:nowrap">
           Aprovação automática: <strong>${c.flag_auto_aprovacao?'Ativo':'Inativo'}</strong>
         </span>
         <label class="toggle">
@@ -869,9 +869,12 @@ async function verBlocos(condId, condNome) {
     el.innerHTML='<div class="empty" style="padding:16px"><i class="ti ti-building"></i><p>Nenhum bloco cadastrado</p></div>'; return
   }
   el.innerHTML = blocos.map(b=>`
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
-      <span style="font-size:13px">${b.nome}</span>
-      <button class="btn btn-sm btn-danger" onclick="removerBloco('${b.id}')"><i class="ti ti-trash"></i></button>
+    <div id="bloco-row-${b.id}" style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+      <span id="bloco-nome-${b.id}" style="font-size:13px;flex:1">${b.nome}</span>
+      <div style="display:flex;gap:4px">
+        <button class="btn btn-sm btn-secondary" onclick="editarBloco('${b.id}','${b.nome.replace(/'/g,"\\'")}')" title="Editar"><i class="ti ti-pencil"></i></button>
+        <button class="btn btn-sm btn-danger" onclick="removerBloco('${b.id}')" title="Remover"><i class="ti ti-trash"></i></button>
+      </div>
     </div>`).join('')
 }
 async function adicionarBloco() {
@@ -883,6 +886,28 @@ async function adicionarBloco() {
   notif('Bloco adicionado!')
   verBlocos(blocoCondId, document.getElementById('blocos-title').textContent.replace('Blocos — ',''))
 }
+function editarBloco(id, nomeAtual) {
+  const row = document.getElementById('bloco-row-'+id)
+  row.innerHTML = `
+    <input class="form-input" id="bloco-edit-${id}" type="text" value="${nomeAtual}" style="flex:1;padding:5px 10px;font-size:13px;margin-right:6px"
+      onkeydown="if(event.key==='Enter')salvarBloco('${id}');if(event.key==='Escape')cancelarEditBloco()">
+    <div style="display:flex;gap:4px">
+      <button class="btn btn-sm btn-primary" onclick="salvarBloco('${id}')"><i class="ti ti-check"></i></button>
+      <button class="btn btn-sm btn-secondary" onclick="cancelarEditBloco()"><i class="ti ti-x"></i></button>
+    </div>`
+  document.getElementById('bloco-edit-'+id).focus()
+}
+async function salvarBloco(id) {
+  const input = document.getElementById('bloco-edit-'+id)
+  const nome = input.value.trim()
+  if(!nome) { alert('Nome não pode ser vazio'); return }
+  await api('/admin/blocos/'+id, {method:'PATCH', body:JSON.stringify({nome})})
+  notif('Bloco atualizado!')
+  verBlocos(blocoCondId, document.getElementById('blocos-title').textContent.replace('Blocos — ',''))
+}
+function cancelarEditBloco() {
+  verBlocos(blocoCondId, document.getElementById('blocos-title').textContent.replace('Blocos — ',''))
+}
 async function removerBloco(id) {
   if(!confirm('Remover este bloco?')) return
   await api('/admin/blocos/' + id, {method:'DELETE'})
@@ -891,6 +916,11 @@ async function removerBloco(id) {
 }
 async function toggleAutoAprov(id, val) {
   await api(`/admin/condominios/${id}`, {method:'PATCH', body:JSON.stringify({flag_auto_aprovacao:val})})
+  const label = document.getElementById('auto-label-'+id)
+  if(label) {
+    label.style.color = val ? 'var(--success)' : 'var(--muted)'
+    label.innerHTML = 'Aprovação automática: <strong>'+(val?'Ativo':'Inativo')+'</strong>'
+  }
   notif(`Auto-aprovação ${val?'ativada':'desativada'}`)
 }
 
