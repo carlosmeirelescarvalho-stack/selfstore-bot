@@ -1,8 +1,16 @@
 // validacao.js
 
+const CPFS_BLOQUEADOS = [
+  '12345678909', '01234567890', '10987654321',
+  '00000000000', '11111111111', '22222222222', '33333333333',
+  '44444444444', '55555555555', '66666666666', '77777777777',
+  '88888888888', '99999999999',
+]
+
 function validarCPF(cpf) {
   const limpo = cpf.replace(/\D/g, '')
   if (limpo.length !== 11 || /^(\d)\1+$/.test(limpo)) return false
+  if (CPFS_BLOQUEADOS.includes(limpo)) return false
   let soma = 0, r
   for (let i = 0; i < 9; i++) soma += parseInt(limpo[i]) * (10 - i)
   r = 11 - (soma % 11); if (r >= 10) r = 0; if (r !== parseInt(limpo[9])) return false
