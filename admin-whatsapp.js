@@ -129,18 +129,37 @@ async function buscarMoradorParaAprovar(celular, busca) {
 async function confirmarAprovacao(celular, resposta, dados) {
   if (resposta.toUpperCase() === 'SIM') {
     await db.atualizarStatusMorador(dados.morador_id, 'aprovado')
-    if (dados.morador_celular) {
-      await enviarTexto(dados.morador_celular, MSG.cadastroAprovadoAuto(dados.morador_nome))
-    }
+
+    let syncOk = false
     if (dados.foto_url && dados.condominio?.idface_ip) {
       try {
-        const { cadastrarRostoIDFace, urlParaBase64 } = require('./idface')
-        const fotoBase64 = await urlParaBase64(dados.foto_url)
-        await cadastrarRostoIDFace(dados.condominio.idface_ip, dados.condominio.idface_senha,
-          { id: dados.morador_id, nome: dados.morador_nome, cpf: dados.cpf || '' }, fotoBase64, dados.condominio.idface_user || 'admin')
-      } catch (e) { console.error('Erro iDFace:', e) }
+        const morador = await db.buscarMoradorPorCelular(dados.morador_celular)
+        if (morador?.cpf) {
+          const { cadastrarRostoIDFace, urlParaBase64 } = require('./idface')
+          const fotoBase64 = await urlParaBase64(dados.foto_url)
+          await cadastrarRostoIDFace(dados.condominio.idface_ip, dados.condominio.idface_senha,
+            morador, fotoBase64, dados.condominio.idface_user || 'admin')
+          syncOk = true
+        } else {
+          console.error('iDFace sync ignorado: morador sem CPF', dados.morador_id)
+        }
+      } catch (e) {
+        console.error('Erro iDFace:', e)
+        await enviarTexto(celular, `⚠️ Falha no sync iDFace para *${dados.morador_nome}*: ${e.message}\nO morador foi aprovado mas o reconhecimento facial não foi registrado.`)
+      }
     }
-    await enviarTexto(celular, `✅ *${dados.morador_nome}* aprovado!`)
+
+    if (dados.morador_celular) {
+      if (syncOk || !dados.condominio?.idface_ip) {
+        await enviarTexto(dados.morador_celular, MSG.cadastroAprovadoAuto(dados.morador_nome))
+      } else {
+        await enviarBotoes(dados.morador_celular, MSG.cadastroAprovadoSemFace(dados.morador_nome), [
+          { id: 'fluxo0_ajuda', titulo: 'Falar com suporte' },
+        ])
+      }
+    }
+
+    await enviarTexto(celular, `✅ *${dados.morador_nome}* aprovado!${syncOk ? ' (facial registrado)' : ''}`)
   } else {
     await enviarTexto(celular, 'Cancelado.')
   }
@@ -416,7 +435,7 @@ async function finalizarCadastroAdmin(celular, dados, imagemBase64) {
     criado_em: new Date().toISOString(),
   })
 
-  // Sincroniza com iDFace se tiver foto
+  let syncOk = false
   if (dados.foto_url && dados.condominio_id) {
     try {
       const cond = await db.buscarCondominioPorNome(dados.condominio_nome)
@@ -424,17 +443,24 @@ async function finalizarCadastroAdmin(celular, dados, imagemBase64) {
         const { cadastrarRostoIDFace, urlParaBase64 } = require('./idface')
         const fb64 = await urlParaBase64(dados.foto_url)
         await cadastrarRostoIDFace(cond.idface_ip, cond.idface_senha, moradorCriado, fb64, cond.idface_user || 'admin')
+        syncOk = true
       }
-    } catch(e) { console.error('Erro iDFace sync admin:', e.message) }
+    } catch(e) {
+      console.error('Erro iDFace sync admin:', e.message)
+      await enviarTexto(celular, `⚠️ Falha no sync iDFace: ${e.message}\nO morador foi cadastrado mas o reconhecimento facial não foi registrado.`)
+    }
   }
 
   await db.deletarSessao(`admin_${celular}`)
 
+  const fotoStatus = !dados.foto_url ? '⚠️ Sem foto — adicione pelo painel.'
+    : syncOk ? '📷 Foto registrada + facial sincronizado.'
+    : '📷 Foto registrada. ⚠️ Facial pendente.'
   await enviarTexto(celular,
     `✅ *${dados.nome}* cadastrado e aprovado!\n\n` +
     `📍 ${dados.bloco} • Apto ${dados.unidade} • ${dados.condominio_nome}\n` +
     `📱 ${dados.celular_whatsapp}\n` +
-    `${dados.foto_url ? '📷 Foto registrada.' : '⚠️ Sem foto — adicione pelo painel.'}`
+    fotoStatus
   )
 
   // Notifica o morador com T&C (aceite_tc = false até ele aceitar)

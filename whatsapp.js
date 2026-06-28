@@ -165,6 +165,8 @@ const MSG = {
     'O que deseja corrigir?\n\n1️⃣ Nome\n2️⃣ CPF\n3️⃣ Data de nascimento\n4️⃣ Bloco\n5️⃣ Apartamento\n6️⃣ Foto\n\n_Digite o número_',
   cadastroAprovadoAuto: (nome) =>
     `🎉 *Cadastro aprovado, ${nome}!*\n\nSeu acesso ao Self Store está liberado.\n\nPara abrir a geladeira, aponte a câmera do celular para o *QR Code* colado na geladeira. 📷`,
+  cadastroAprovadoSemFace: (nome) =>
+    `Olá, *${nome}*! Estamos passando por instabilidades na rede e não conseguimos concluir o seu cadastro agora.\n\nPor favor, tente novamente mais tarde ou entre em contato com nosso suporte.`,
   cadastroEnviado: () =>
     '✅ *Cadastro enviado com sucesso!*\n\nSeu cadastro foi recebido e será analisado em breve.\n\nVocê receberá uma mensagem aqui quando for aprovado. 🎉',
   geladeiraNaoCadastrado: () =>

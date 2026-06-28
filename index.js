@@ -46,6 +46,48 @@ cron.schedule('0 8 * * *', async () => {
   }
 }, { timezone: 'America/Sao_Paulo' })
 
+// ─── CRON — monitoramento Pi offline (a cada 5 min) ──────────────
+const _alertasRecentes = new Map()
+
+cron.schedule('*/5 * * * *', async () => {
+  try {
+    const supa = getSupa()
+    const { data: geladeiras } = await supa
+      .from('geladeiras')
+      .select('id, nome, esp32_ip, ultimo_heartbeat, condominio_id, condominios(nome)')
+      .not('esp32_ip', 'is', null)
+
+    if (!geladeiras?.length) return
+
+    const agora = Date.now()
+    const LIMITE_MS = 2 * 60 * 1000
+    const DEBOUNCE_MS = 30 * 60 * 1000
+
+    for (const g of geladeiras) {
+      if (!g.ultimo_heartbeat) continue
+      const diff = agora - new Date(g.ultimo_heartbeat).getTime()
+      if (diff <= LIMITE_MS) continue
+
+      const ultimoAlerta = _alertasRecentes.get(g.id)
+      if (ultimoAlerta && (agora - ultimoAlerta) < DEBOUNCE_MS) continue
+
+      _alertasRecentes.set(g.id, agora)
+      const minOffline = Math.round(diff / 60000)
+      await notificarAdmin(
+        `🔴 *Pi offline*\n\n` +
+        `Geladeira: ${g.nome}\n` +
+        `Condomínio: ${g.condominios?.nome || 'N/A'}\n` +
+        `Último heartbeat: ${minOffline} min atrás\n\n` +
+        `O dispositivo pode estar sem energia ou sem Wi-Fi.`,
+        g.condominio_id
+      )
+      console.log(`Alerta Pi offline: ${g.nome} (${minOffline} min)`)
+    }
+  } catch (e) {
+    console.error('Erro cron monitoramento Pi:', e)
+  }
+})
+
 // ─── WEBHOOK — Meta Cloud API ─────────────────────────────────────
 
 app.get('/webhook/whatsapp', (req, res) => {
@@ -156,6 +198,14 @@ async function processarMensagemMeta(msg, value) {
     // ── Comando de abertura de geladeira ──
     if (tipoMensagem === 'text' && isComandoGeladeira(textoMensagem)) {
       await handleGeladeira(celular, textoMensagem, buttonId)
+      return
+    }
+
+    // ── QR Code de cadastro por condomínio (ex: "CADASTRO @Adele Zarzur") ──
+    if (tipoMensagem === 'text' && textoMensagem.trim().toUpperCase().startsWith('CADASTRO')) {
+      const matchCond = textoMensagem.match(/@(.+)/i)
+      const nomeCond = matchCond ? matchCond[1].trim() : null
+      await iniciarCadastro(celular, nomeCond)
       return
     }
 
@@ -287,18 +337,26 @@ app.patch('/admin/moradores/:id', async (req, res) => {
 
     if (morador && morador.celular_whatsapp) {
       if (status === 'aprovado') {
-        try { await enviarTexto(morador.celular_whatsapp, MSG.cadastroAprovadoAuto(morador.nome)) } catch(e) { console.error('Erro notif WhatsApp:', e.message) }
-        if (morador.foto_url) {
+        let syncOk = false
+        const supa = getSupa()
+        const { data: cond } = await supa.from('condominios').select('*').eq('id', morador.condominio_id).single()
+        if (morador.foto_url && cond?.idface_ip) {
           try {
-            const supa = getSupa()
-            const { data: cond } = await supa.from('condominios').select('*').eq('id', morador.condominio_id).single()
-            if (cond?.idface_ip) {
-              const { cadastrarRostoIDFace, urlParaBase64 } = require('./idface')
-              const fotoBase64 = await urlParaBase64(morador.foto_url)
-              await cadastrarRostoIDFace(cond.idface_ip, cond.idface_senha, morador, fotoBase64, cond.idface_user || 'admin')
-            }
+            const { cadastrarRostoIDFace, urlParaBase64 } = require('./idface')
+            const fotoBase64 = await urlParaBase64(morador.foto_url)
+            await cadastrarRostoIDFace(cond.idface_ip, cond.idface_senha, morador, fotoBase64, cond.idface_user || 'admin')
+            syncOk = true
           } catch(e) { console.error('Erro iDFace sync:', e.message) }
         }
+        try {
+          if (syncOk || !cond?.idface_ip) {
+            await enviarTexto(morador.celular_whatsapp, MSG.cadastroAprovadoAuto(morador.nome))
+          } else {
+            await enviarBotoes(morador.celular_whatsapp, MSG.cadastroAprovadoSemFace(morador.nome), [
+              { id: 'fluxo0_ajuda', titulo: 'Falar com suporte' },
+            ])
+          }
+        } catch(e) { console.error('Erro notif WhatsApp:', e.message) }
       } else if (status === 'rejeitado') {
         try { await enviarTexto(morador.celular_whatsapp, MSG.acessoNegadoRejeitado()) } catch(e) { console.error('Erro notif rejeicao:', e.message) }
       }
@@ -499,6 +557,10 @@ app.get('/painel', (req, res) => {
   res.sendFile(__dirname + '/painel.html')
 })
 
+app.get('/termos', (req, res) => {
+  res.sendFile(__dirname + '/termos.html')
+})
+
 // ESP32/Pi polling endpoint
 app.post('/esp32/heartbeat', async (req, res) => {
   res.sendStatus(200)
@@ -508,7 +570,10 @@ app.post('/esp32/heartbeat', async (req, res) => {
     const { geladeira, ip, evento } = req.body
     if (!geladeira || !ip) return
     const supa = getSupa()
-    await supa.from('geladeiras').update({ esp32_ip: ip }).ilike('nome', '%' + geladeira + '%')
+    await supa.from('geladeiras').update({
+      esp32_ip: ip,
+      ultimo_heartbeat: new Date().toISOString(),
+    }).ilike('nome', '%' + geladeira + '%')
     console.log('ESP32 heartbeat:', geladeira, 'IP:', ip, evento)
   } catch (err) {
     console.error('Erro heartbeat ESP32:', err)
