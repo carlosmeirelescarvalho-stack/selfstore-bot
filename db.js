@@ -207,6 +207,33 @@ async function inserirComandoGeladeira(geladeiraId, moradorId) {
   if (error) throw error
 }
 
+// ─── MENSAGENS BOT ───────────────────────────────────────────────
+
+async function registrarMensagem(celular, direcao, conteudo, tipo, sessaoId) {
+  try {
+    await supabase().from('mensagens_bot').insert([{
+      celular,
+      direcao,
+      conteudo: (conteudo || '').substring(0, 4000),
+      tipo: tipo || 'texto',
+      sessao_id: sessaoId || null,
+    }])
+  } catch (e) {
+    console.error('Erro registrarMensagem:', e.message)
+  }
+}
+
+async function buscarMensagensPorCelular(celular, limite) {
+  const { data, error } = await supabase()
+    .from('mensagens_bot')
+    .select('*')
+    .eq('celular', celular)
+    .order('criado_em', { ascending: false })
+    .limit(limite || 20)
+  if (error) return []
+  return (data || []).reverse()
+}
+
 // ─── LOGS ─────────────────────────────────────────────────────────
 
 async function registrarLog(moradorId, geladeiraId, tipo, resultado, detalhes) {
@@ -301,6 +328,26 @@ async function deletarMorador(id) {
   if (error) throw error
 }
 
+async function excluirDadosMorador(id, fotoUrl, celular) {
+  if (fotoUrl) {
+    try {
+      const url = new URL(fotoUrl)
+      const pathMatch = url.pathname.match(/\/object\/public\/selfstore\/(.+)/)
+      if (pathMatch) {
+        await supabase().storage.from('selfstore').remove([pathMatch[1]])
+      }
+    } catch (e) {
+      console.warn('Exclusão LGPD: falha ao remover foto do storage:', e.message)
+    }
+  }
+  if (celular) {
+    await supabase().from('sessoes_cadastro').delete().eq('celular', celular)
+  }
+  await supabase().from('logs_acesso').delete().eq('morador_id', id)
+  const { error } = await supabase().from('moradores').delete().eq('id', id)
+  if (error) throw error
+}
+
 async function atualizarMorador(id, campos) {
   const { data, error } = await supabase()
     .from('moradores')
@@ -349,6 +396,7 @@ async function buscarMoradorParaAcao(busca) {
 }
 
 module.exports = {
+  supabase,
   buscarMoradorPorCelular,
   buscarMoradorPorCPF,
   criarMorador,
@@ -366,6 +414,8 @@ module.exports = {
   extrairCondominioDeComando,
   inserirComandoGeladeira,
   registrarLog,
+  registrarMensagem,
+  buscarMensagensPorCelular,
   uploadFoto,
   listarAdmins,
   adicionarAdmin,
@@ -373,6 +423,7 @@ module.exports = {
   removerAdmin,
   buscarAdminsPorCondominio,
   deletarMorador,
+  excluirDadosMorador,
   atualizarMorador,
   listarMoradoresPorStatus,
   contarPendentes,
