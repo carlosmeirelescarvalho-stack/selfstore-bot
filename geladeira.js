@@ -46,6 +46,15 @@ async function handleGeladeira(celular, mensagem, buttonId) {
       return
     }
 
+    // 3.3b — Bloqueado
+    if (morador.status === 'bloqueado') {
+      await enviarBotoes(celular, MSG.acessoBloqueado(), [
+        { id: 'fluxo0_ajuda', titulo: 'Falar com suporte' },
+      ])
+      await db.registrarLog(morador.id, null, 'whatsapp', 'negado', 'cadastro bloqueado')
+      return
+    }
+
     // 3.4 — Busca geladeira
     const geladeira = await db.buscarGeladeiraPorCodigo(codigoGeladeira)
     if (!geladeira) {

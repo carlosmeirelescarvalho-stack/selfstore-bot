@@ -256,6 +256,10 @@ async function handleFluxo0(celular, texto, buttonId) {
     ])
   } else if (morador && morador.status === 'pendente') {
     await enviarTexto(celular, MSG.acessoNegadoPendente())
+  } else if (morador && morador.status === 'bloqueado') {
+    await enviarBotoes(celular, MSG.acessoBloqueado(), [
+      { id: 'fluxo0_ajuda', titulo: 'Falar com suporte' },
+    ])
   } else {
     await enviarBotoes(celular, `${MSG.apresentacao()}\n\n${MSG.naoCadastrado()}`, [
       { id: 'iniciar_cadastro', titulo: 'Fazer cadastro' },
@@ -375,6 +379,12 @@ app.patch('/admin/moradores/:id', async (req, res) => {
         } catch(e) { console.error('Erro notif WhatsApp:', e.message) }
       } else if (status === 'rejeitado') {
         try { await enviarTexto(morador.celular_whatsapp, MSG.acessoNegadoRejeitado()) } catch(e) { console.error('Erro notif rejeicao:', e.message) }
+      } else if (status === 'bloqueado') {
+        try {
+          await enviarBotoes(morador.celular_whatsapp, MSG.acessoBloqueado(), [
+            { id: 'fluxo0_ajuda', titulo: 'Falar com suporte' },
+          ])
+        } catch(e) { console.error('Erro notif bloqueio:', e.message) }
       }
     }
   } catch (err) { res.status(500).json({ erro: err.message }) }

@@ -207,10 +207,11 @@ async function buscarMoradorParaBloquear(celular, busca) {
 
 async function confirmarBloqueio(celular, resposta, dados) {
   if (resposta.toUpperCase() === 'SIM') {
-    await db.atualizarStatusMorador(dados.morador_id, 'rejeitado')
+    await db.atualizarStatusMorador(dados.morador_id, 'bloqueado')
     if (dados.morador_celular) {
-      await enviarTexto(dados.morador_celular,
-        '⛔ Seu acesso ao Self Store foi *suspenso* pelo administrador.\n\nPara mais informações, entre em contato com a administração.')
+      await enviarBotoes(dados.morador_celular, MSG.acessoBloqueado(), [
+        { id: 'fluxo0_ajuda', titulo: 'Falar com suporte' },
+      ])
     }
     await enviarTexto(celular, `✅ *${dados.morador_nome}* bloqueado.`)
   } else {
