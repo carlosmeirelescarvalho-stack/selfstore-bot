@@ -181,6 +181,8 @@ const MSG = {
     '⏳ Seu cadastro ainda está *em análise*.\n\nVocê receberá uma mensagem assim que for aprovado.',
   acessoNegadoRejeitado: () =>
     '❌ Seu cadastro não foi aprovado.\n\nPara mais informações, entre em contato com a gente.',
+  acessoBloqueado: () =>
+    'Seu cadastro no Self Store Minimercado foi bloqueado e isso suspende o seu acesso.\n\nPara regularizar o acesso, entre em contato com nosso suporte.',
   acessoNegadoMenor: () =>
     '⛔ Acesso negado. Esta geladeira é restrita a *maiores de 18 anos*.',
   geladeiraAberta: (nomeGeladeira) =>
