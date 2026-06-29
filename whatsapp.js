@@ -164,7 +164,11 @@ const MSG = {
   corrigirCampo: () =>
     'O que deseja corrigir?\n\n1️⃣ Nome\n2️⃣ CPF\n3️⃣ Data de nascimento\n4️⃣ Bloco\n5️⃣ Apartamento\n6️⃣ Foto\n\n_Digite o número_',
   cadastroAprovadoAuto: (nome) =>
-    `🎉 *Cadastro aprovado, ${nome}!*\n\nSeu acesso ao Self Store está liberado.\n\nPara abrir a geladeira, aponte a câmera do celular para o *QR Code* colado na geladeira. 📷`,
+    `🎉 *Cadastro aprovado, ${nome}!*\n\nSeu acesso ao Self Store está liberado. Veja como funciona:\n\n` +
+    `1️⃣ Acesse o mercado através do *reconhecimento facial*\n` +
+    `2️⃣ Selecione os seus produtos favoritos — para a geladeira +18, escaneie o *QR Code* na porta\n` +
+    `3️⃣ Realize o pagamento na *maquininha*\n\n` +
+    `Qualquer dúvida, digite *AJUDA* a qualquer momento. Boas compras! 🛒`,
   cadastroEnviado: () =>
     '✅ *Cadastro enviado com sucesso!*\n\nSeu cadastro foi recebido e será analisado em breve.\n\nVocê receberá uma mensagem aqui quando for aprovado. 🎉',
   geladeiraNaoCadastrado: () =>

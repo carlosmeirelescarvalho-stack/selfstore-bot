@@ -897,6 +897,9 @@ async function carregarGeladeiras() {
           <span class="slider"></span>
         </label>
       </div>
+      <a class="btn btn-sm btn-secondary" href="/qr/geladeira/${g.id}" download style="text-decoration:none;display:inline-flex;align-items:center;gap:4px">
+        <i class="ti ti-qrcode"></i>QR
+      </a>
       <span style="width:8px;height:8px;border-radius:50%;background:${g.esp32_ip?'var(--accent)':'var(--border)'}"></span>
     </div>`).join('')
 }
@@ -928,6 +931,9 @@ async function carregarCondominios2() {
       <button class="btn btn-sm btn-secondary" onclick="verBlocos('${c.id}','${c.nome}')">
         <i class="ti ti-building"></i>Blocos
       </button>
+      <a class="btn btn-sm btn-secondary" href="/qr/cadastro/${c.id}" download style="text-decoration:none">
+        <i class="ti ti-qrcode"></i>QR Cadastro
+      </a>
       <div style="display:flex;align-items:center;gap:8px">
         <span id="auto-label-${c.id}" style="font-size:11px;color:${c.flag_auto_aprovacao?'var(--success)':'var(--muted)'};white-space:nowrap">
           Aprovação automática: <strong>${c.flag_auto_aprovacao?'Ativo':'Inativo'}</strong>
