@@ -1,6 +1,7 @@
 // services/whatsapp.js — envia mensagens via Meta Cloud API (WhatsApp oficial)
 
 const config = require('./config')
+const db = require('./db')
 
 const GRAPH_URL = 'https://graph.facebook.com/v21.0'
 
@@ -22,6 +23,7 @@ async function enviarTexto(celular, texto) {
     const err = await res.text()
     throw new Error(`WhatsApp sendText error: ${err}`)
   }
+  db.registrarMensagem(celular, 'enviada', texto, 'texto')
   return res.json()
 }
 
@@ -53,11 +55,12 @@ async function enviarBotoes(celular, corpo, botoes) {
     const err = await res.text()
     throw new Error(`WhatsApp sendButtons error: ${err}`)
   }
+  const botoesTexto = botoes.map(b => b.titulo).join(' | ')
+  db.registrarMensagem(celular, 'enviada', `${corpo}\n[${botoesTexto}]`, 'interativo')
   return res.json()
 }
 
 async function notificarAdmin(texto, condominioId) {
-  const db = require('./db')
   const destinatarios = []
 
   if (condominioId) {
@@ -84,7 +87,6 @@ function dentroHorarioComercial() {
 }
 
 async function iniciarAtendimentoHumano(celular, sessaoKey) {
-  const db = require('./db')
   if (dentroHorarioComercial()) {
     await db.salvarSessao(sessaoKey || celular, 'atendimento_nome', {})
     await enviarTexto(celular, 'Para te encaminhar ao nosso time, preciso de algumas informações.\n\nQual é o seu *nome*?')
@@ -169,6 +171,8 @@ const MSG = {
     `2️⃣ Selecione os seus produtos favoritos — para a geladeira +18, escaneie o *QR Code* na porta\n` +
     `3️⃣ Realize o pagamento na *maquininha*\n\n` +
     `Qualquer dúvida, digite *AJUDA* a qualquer momento. Boas compras! 🛒`,
+  cadastroAprovadoSemFace: (nome) =>
+    `Olá, *${nome}*! Estamos passando por instabilidades na rede e não conseguimos concluir o seu cadastro agora.\n\nPor favor, tente novamente mais tarde ou entre em contato com nosso suporte.`,
   cadastroEnviado: () =>
     '✅ *Cadastro enviado com sucesso!*\n\nSeu cadastro foi recebido e será analisado em breve.\n\nVocê receberá uma mensagem aqui quando for aprovado. 🎉',
   geladeiraNaoCadastrado: () =>
@@ -193,6 +197,23 @@ const MSG = {
     '✅ Termos aceitos! Seu acesso está liberado.\n\nPara abrir a geladeira, aponte a câmera do celular para o *QR Code* colado na geladeira. 📷',
   erroGeral: () =>
     '⚠️ Ocorreu um erro inesperado. Tente novamente em alguns instantes.\n\nSe o problema persistir, envie *AJUDA*.',
+  menuAjuda: () =>
+    'Como posso te ajudar?',
+  confirmarExclusao: () =>
+    '⚠️ *Atenção: esta ação não pode ser desfeita.*\n\n' +
+    'Ao excluir seus dados, seu acesso ao Self Store será cancelado permanentemente. Serão removidos:\n\n' +
+    '• Seus dados pessoais (nome, CPF, data de nascimento)\n' +
+    '• Sua foto e reconhecimento facial\n' +
+    '• Seu histórico de cadastro\n\n' +
+    'Deseja continuar?',
+  exclusaoConcluida: () =>
+    '✅ Seus dados foram excluídos com sucesso.\n\nSe quiser usar o Self Store novamente no futuro, será necessário um novo cadastro.',
+  exclusaoCancelada: () =>
+    'Ok, seus dados foram mantidos. Se precisar de algo mais, é só chamar!',
+  exclusaoFalha: () =>
+    'Tivemos uma falha técnica e não conseguimos completar a exclusão automática agora.\n\n' +
+    'Mas não se preocupe, nosso time de suporte trabalhará na exclusão manual dos dados e enviará confirmação pra você assim que for concluído.\n\n' +
+    'Nosso prazo máximo é de 72h e, nesse meio tempo, fique à vontade para falar com a gente.',
 }
 
 module.exports = { enviarTexto, enviarBotoes, notificarAdmin, iniciarAtendimentoHumano, dentroHorarioComercial, buscarImagemMeta, MSG }

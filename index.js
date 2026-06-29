@@ -9,16 +9,11 @@ const { previewPlanilha, importarPlanilha, cadastrarManual } = require('./import
 const multer = require('multer')
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } })
 const { handleGeladeira, isComandoGeladeira, handleGeladeiraTC } = require('./geladeira')
+const { handleExclusao, iniciarExclusao } = require('./exclusao')
 const { enviarTexto, enviarBotoes, buscarImagemMeta, iniciarAtendimentoHumano, notificarAdmin, MSG } = require('./whatsapp')
 const db = require('./db')
 
-const ws = require('ws')
-const { createClient: _createClient } = require('@supabase/supabase-js')
-function getSupa() {
-  return _createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY, {
-    realtime: { transport: ws }
-  })
-}
+const getDb = () => db.supabase()
 
 const app = express()
 app.use(express.json({ limit: '20mb' }))
@@ -45,6 +40,47 @@ cron.schedule('0 8 * * *', async () => {
     console.error('Erro cron sessoes abandonadas:', e)
   }
 }, { timezone: 'America/Sao_Paulo' })
+
+// ─── CRON — monitoramento Pi offline (a cada 15 min) ─────────────
+const _alertasRecentes = new Map()
+
+cron.schedule('*/15 * * * *', async () => {
+  try {
+    const { data: geladeiras } = await getDb()
+      .from('geladeiras')
+      .select('id, nome, esp32_ip, ultimo_heartbeat, condominio_id, condominios(nome)')
+      .not('esp32_ip', 'is', null)
+
+    if (!geladeiras?.length) return
+
+    const agora = Date.now()
+    const LIMITE_MS = 2 * 60 * 1000
+    const DEBOUNCE_MS = 30 * 60 * 1000
+
+    for (const g of geladeiras) {
+      if (!g.ultimo_heartbeat) continue
+      const diff = agora - new Date(g.ultimo_heartbeat).getTime()
+      if (diff <= LIMITE_MS) continue
+
+      const ultimoAlerta = _alertasRecentes.get(g.id)
+      if (ultimoAlerta && (agora - ultimoAlerta) < DEBOUNCE_MS) continue
+
+      _alertasRecentes.set(g.id, agora)
+      const minOffline = Math.round(diff / 60000)
+      await notificarAdmin(
+        `🔴 *Pi offline*\n\n` +
+        `Geladeira: ${g.nome}\n` +
+        `Condomínio: ${g.condominios?.nome || 'N/A'}\n` +
+        `Último heartbeat: ${minOffline} min atrás\n\n` +
+        `O dispositivo pode estar sem energia ou sem Wi-Fi.`,
+        g.condominio_id
+      )
+      console.log(`Alerta Pi offline: ${g.nome} (${minOffline} min)`)
+    }
+  } catch (e) {
+    console.error('Erro cron monitoramento Pi:', e)
+  }
+})
 
 // ─── WEBHOOK — Meta Cloud API ─────────────────────────────────────
 
@@ -89,6 +125,9 @@ async function processarMensagemMeta(msg, value) {
     const textoMensagem = extrairTexto(msg, tipoMensagem)
     const buttonId = extrairButtonId(msg)
 
+    const conteudoLog = buttonId ? `[button:${buttonId}] ${textoMensagem}` : textoMensagem
+    db.registrarMensagem(celular, 'recebida', conteudoLog || `[${tipoMensagem}]`, tipoMensagem)
+
     let imagemBase64 = null
     if (tipoMensagem === 'image') {
       const mediaId = msg.image?.id
@@ -97,7 +136,15 @@ async function processarMensagemMeta(msg, value) {
 
     // ── AJUDA global (antes de qualquer roteamento) ──
     if (textoMensagem.toUpperCase().trim() === 'AJUDA') {
-      await iniciarAtendimentoHumano(celular)
+      const moradorAjuda = await db.buscarMoradorPorCelular(celular)
+      if (moradorAjuda) {
+        await enviarBotoes(celular, MSG.menuAjuda(), [
+          { id: 'ajuda_atendimento', titulo: 'Falar com suporte' },
+          { id: 'ajuda_excluir_dados', titulo: 'Excluir meus dados' },
+        ])
+      } else {
+        await iniciarAtendimentoHumano(celular)
+      }
       return
     }
 
@@ -141,6 +188,12 @@ async function processarMensagemMeta(msg, value) {
         }
       }
 
+      // Sub-fluxo exclusão de dados (LGPD)
+      if (etapa === 'exclusao_confirmar') {
+        const handled = await handleExclusao(celular, buttonId)
+        if (handled) return
+      }
+
       // Sub-fluxo atendimento humano
       if (etapa === 'atendimento_nome') {
         await handleAtendimentoNome(celular, textoMensagem)
@@ -162,6 +215,14 @@ async function processarMensagemMeta(msg, value) {
       return
     }
 
+    // ── QR Code de cadastro por condomínio (ex: "CADASTRO @Adele Zarzur") ──
+    if (tipoMensagem === 'text' && textoMensagem.trim().toUpperCase().startsWith('CADASTRO')) {
+      const matchCond = textoMensagem.match(/@(.+)/i)
+      const nomeCond = matchCond ? matchCond[1].trim() : null
+      await iniciarCadastro(celular, nomeCond)
+      return
+    }
+
     // ── FLUXO 0 — primeira interação / roteamento ──
     await handleFluxo0(celular, textoMensagem, buttonId)
 
@@ -180,8 +241,13 @@ async function handleFluxo0(celular, texto, buttonId) {
     return
   }
 
-  if (buttonId === 'fluxo0_ajuda') {
+  if (buttonId === 'fluxo0_ajuda' || buttonId === 'ajuda_atendimento') {
     await iniciarAtendimentoHumano(celular)
+    return
+  }
+
+  if (buttonId === 'ajuda_excluir_dados') {
+    await iniciarExclusao(celular)
     return
   }
 
@@ -271,7 +337,7 @@ app.get('/health', (req, res) => res.json({ status: 'ok', ts: new Date() }))
 app.get('/admin/moradores', async (req, res) => {
   try {
     const { status, busca, limit = 50, offset = 0 } = req.query
-    const supa = getSupa()
+    const supa = getDb()
     let query = supa.from('moradores').select('*, condominios(nome)', { count: 'exact' })
     if (status && status !== 'todos') query = query.eq('status', status)
     if (busca) query = query.or(`nome.ilike.%${busca}%,cpf.ilike.%${busca}%,unidade.ilike.%${busca}%`)
@@ -290,18 +356,26 @@ app.patch('/admin/moradores/:id', async (req, res) => {
 
     if (morador && morador.celular_whatsapp) {
       if (status === 'aprovado') {
-        try { await enviarTexto(morador.celular_whatsapp, MSG.cadastroAprovadoAuto(morador.nome)) } catch(e) { console.error('Erro notif WhatsApp:', e.message) }
-        if (morador.foto_url) {
+        let syncOk = false
+        const supa = getDb()
+        const { data: cond } = await supa.from('condominios').select('*').eq('id', morador.condominio_id).single()
+        if (morador.foto_url && cond?.idface_ip) {
           try {
-            const supa = getSupa()
-            const { data: cond } = await supa.from('condominios').select('*').eq('id', morador.condominio_id).single()
-            if (cond?.idface_ip) {
-              const { cadastrarRostoIDFace, urlParaBase64 } = require('./idface')
-              const fotoBase64 = await urlParaBase64(morador.foto_url)
-              await cadastrarRostoIDFace(cond.idface_ip, cond.idface_senha, morador, fotoBase64, cond.idface_user || 'admin')
-            }
+            const { cadastrarRostoIDFace, urlParaBase64 } = require('./idface')
+            const fotoBase64 = await urlParaBase64(morador.foto_url)
+            await cadastrarRostoIDFace(cond.idface_ip, cond.idface_senha, morador, fotoBase64, cond.idface_user || 'admin')
+            syncOk = true
           } catch(e) { console.error('Erro iDFace sync:', e.message) }
         }
+        try {
+          if (syncOk || !cond?.idface_ip) {
+            await enviarTexto(morador.celular_whatsapp, MSG.cadastroAprovadoAuto(morador.nome))
+          } else {
+            await enviarBotoes(morador.celular_whatsapp, MSG.cadastroAprovadoSemFace(morador.nome), [
+              { id: 'fluxo0_ajuda', titulo: 'Falar com suporte' },
+            ])
+          }
+        } catch(e) { console.error('Erro notif WhatsApp:', e.message) }
       } else if (status === 'rejeitado') {
         try { await enviarTexto(morador.celular_whatsapp, MSG.acessoNegadoRejeitado()) } catch(e) { console.error('Erro notif rejeicao:', e.message) }
       }
@@ -318,7 +392,7 @@ app.put('/admin/moradores/:id', async (req, res) => {
 
 app.delete('/admin/moradores/:id', async (req, res) => {
   try {
-    const supa = getSupa()
+    const supa = getDb()
     const { data: morador } = await supa.from('moradores').select('*, condominios(*)').eq('id', req.params.id).single()
     if (morador?.foto_url && morador?.condominios?.idface_ip) {
       try {
@@ -393,7 +467,7 @@ app.delete('/admin/admins/:id', async (req, res) => {
 
 app.get('/admin/stats', async (req, res) => {
   try {
-    const supa = getSupa()
+    const supa = getDb()
     const [total, pendentes, aprovados, logs] = await Promise.all([
       supa.from('moradores').select('*', { count: 'exact', head: true }),
       supa.from('moradores').select('*', { count: 'exact', head: true }).eq('status', 'pendente'),
@@ -412,7 +486,7 @@ app.get('/admin/stats', async (req, res) => {
 app.get('/admin/logs', async (req, res) => {
   try {
     const { tipo, resultado, limit = 50 } = req.query
-    const supa = getSupa()
+    const supa = getDb()
     let q = supa.from('logs_acesso')
       .select('*, moradores(nome), geladeiras(nome)')
       .order('criado_em', { ascending: false })
@@ -427,7 +501,7 @@ app.get('/admin/logs', async (req, res) => {
 
 app.get('/admin/geladeiras', async (req, res) => {
   try {
-    const supa = getSupa()
+    const supa = getDb()
     const { data, error } = await supa.from('geladeiras').select('*, condominios(nome)').order('nome')
     if (error) throw error
     res.json({ geladeiras: data })
@@ -436,7 +510,7 @@ app.get('/admin/geladeiras', async (req, res) => {
 
 app.patch('/admin/geladeiras/:id', async (req, res) => {
   try {
-    const supa = getSupa()
+    const supa = getDb()
     const { data, error } = await supa.from('geladeiras').update(req.body).eq('id', req.params.id).select('*, condominios(nome)').single()
     if (error) throw error
     res.json({ geladeira: data })
@@ -445,7 +519,7 @@ app.patch('/admin/geladeiras/:id', async (req, res) => {
 
 app.get('/admin/condominios', async (req, res) => {
   try {
-    const supa = getSupa()
+    const supa = getDb()
     const { data, error } = await supa.from('condominios').select('*').order('nome')
     if (error) throw error
     res.json({ condominios: data })
@@ -463,7 +537,7 @@ app.get('/admin/blocos/:condominioId', async (req, res) => {
 app.post('/admin/blocos', async (req, res) => {
   try {
     const { condominio_id, nome } = req.body
-    const supa = getSupa()
+    const supa = getDb()
     const { data, error } = await supa.from('blocos').insert([{ condominio_id, nome }]).select().single()
     if (error) throw error
     res.json({ bloco: data })
@@ -473,7 +547,7 @@ app.post('/admin/blocos', async (req, res) => {
 app.patch('/admin/blocos/:id', async (req, res) => {
   try {
     const { nome } = req.body
-    const supa = getSupa()
+    const supa = getDb()
     const { data, error } = await supa.from('blocos').update({ nome }).eq('id', req.params.id).select().single()
     if (error) throw error
     res.json({ bloco: data })
@@ -482,7 +556,7 @@ app.patch('/admin/blocos/:id', async (req, res) => {
 
 app.delete('/admin/blocos/:id', async (req, res) => {
   try {
-    const supa = getSupa()
+    const supa = getDb()
     const { error } = await supa.from('blocos').delete().eq('id', req.params.id)
     if (error) throw error
     res.json({ ok: true })
@@ -491,7 +565,7 @@ app.delete('/admin/blocos/:id', async (req, res) => {
 
 app.patch('/admin/condominios/:id', async (req, res) => {
   try {
-    const supa = getSupa()
+    const supa = getDb()
     const { data, error } = await supa.from('condominios').update(req.body).eq('id', req.params.id).select().single()
     if (error) throw error
     res.json({ condominio: data })
@@ -533,6 +607,10 @@ app.get('/painel', (req, res) => {
   res.sendFile(__dirname + '/painel.html')
 })
 
+app.get('/termos', (req, res) => {
+  res.sendFile(__dirname + '/termos.html')
+})
+
 // ESP32/Pi polling endpoint
 app.post('/esp32/heartbeat', async (req, res) => {
   res.sendStatus(200)
@@ -541,8 +619,11 @@ app.post('/esp32/heartbeat', async (req, res) => {
     if (secret !== config.ESP32_SECRET) return
     const { geladeira, ip, evento } = req.body
     if (!geladeira || !ip) return
-    const supa = getSupa()
-    await supa.from('geladeiras').update({ esp32_ip: ip }).ilike('nome', '%' + geladeira + '%')
+    const supa = getDb()
+    await supa.from('geladeiras').update({
+      esp32_ip: ip,
+      ultimo_heartbeat: new Date().toISOString(),
+    }).ilike('nome', '%' + geladeira + '%')
     console.log('ESP32 heartbeat:', geladeira, 'IP:', ip, evento)
   } catch (err) {
     console.error('Erro heartbeat ESP32:', err)
