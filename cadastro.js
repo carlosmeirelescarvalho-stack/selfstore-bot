@@ -2,7 +2,7 @@
 
 const db = require('./db')
 const config = require('./config')
-const { enviarTexto, enviarBotoes, notificarAdmin, MSG } = require('./whatsapp')
+const { enviarTexto, enviarBotoes, notificarAdmin, iniciarAtendimentoHumano, MSG } = require('./whatsapp')
 const { validarCPF, validarDataNascimento, validarNomeCompleto, validarUnidade, dataParaISO, formatarDataNasc } = require('./validacao')
 
 async function handleCadastro(celular, mensagem, tipoMensagem, imagemBase64, buttonId) {
@@ -272,8 +272,16 @@ async function finalizarCadastro(celular, dados, imagemBase64) {
   await db.deletarSessao(celular)
 
   if (autoAprovacao) {
-    try { await enviarTexto(celular, MSG.cadastroAprovadoAuto(dados.nome)) } catch(e) { console.error('Erro notif WhatsApp:', e.message) }
-    await sincronizarComIDFace(morador, imagemBase64, condominio)
+    const syncOk = await sincronizarComIDFace(morador, imagemBase64, condominio)
+    try {
+      if (syncOk || !condominio?.idface_ip) {
+        await enviarTexto(celular, MSG.cadastroAprovadoAuto(dados.nome))
+      } else {
+        await enviarBotoes(celular, MSG.cadastroAprovadoSemFace(dados.nome), [
+          { id: 'fluxo0_ajuda', titulo: 'Falar com suporte' },
+        ])
+      }
+    } catch(e) { console.error('Erro notif WhatsApp:', e.message) }
   } else {
     try { await enviarTexto(celular, MSG.cadastroEnviado()) } catch(e) { console.error('Erro notif WhatsApp:', e.message) }
     try {
@@ -293,15 +301,28 @@ async function finalizarCadastro(celular, dados, imagemBase64) {
 
 async function sincronizarComIDFace(morador, fotoBase64, condominio) {
   try {
-    if (!condominio?.idface_ip || !condominio?.idface_senha) return
+    if (!condominio?.idface_ip || !condominio?.idface_senha) return false
+    if (!fotoBase64) return false
     const { cadastrarRostoIDFace } = require('./idface')
     await cadastrarRostoIDFace(
       condominio.idface_ip, condominio.idface_senha,
       morador, fotoBase64, condominio.idface_user || 'admin'
     )
     console.log(`iDFace: rosto cadastrado para morador ${morador.id}`)
+    return true
   } catch (err) {
     console.error('Erro ao sincronizar com iDFace:', err)
+    try {
+      await notificarAdmin(
+        `⚠️ *Falha no sync iDFace*\n\n` +
+        `Morador: ${morador.nome} (ID: ${morador.id})\n` +
+        `Condomínio: ${condominio.nome || 'N/A'}\n` +
+        `Erro: ${err.message}\n\n` +
+        `O morador foi aprovado mas o reconhecimento facial não foi registrado. Necessário re-sync manual via painel.`,
+        condominio.id
+      )
+    } catch(e) { console.error('Erro ao notificar admin sobre falha iDFace:', e.message) }
+    return false
   }
 }
 

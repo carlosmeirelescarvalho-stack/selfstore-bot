@@ -6,9 +6,9 @@ Permite cadastro de moradores via WhatsApp e abertura de geladeira via QR Code.
 
 ## Arquitetura
 ```
-WhatsApp ←→ Evolution API ←→ Este servidor ←→ Supabase (banco)
+WhatsApp ←→ Meta Cloud API ←→ Este servidor ←→ Supabase (banco)
                                             ←→ iDFace Pro (reconhecimento facial)
-                                            ←→ ESP32 (abertura de geladeira)
+                                            ←→ Raspberry Pi (abertura de geladeira)
 ```
 
 ---
@@ -31,38 +31,26 @@ WhatsApp ←→ Evolution API ←→ Este servidor ←→ Supabase (banco)
 
 ---
 
-## PASSO 3 — Deploy da Evolution API no Railway
-1. Acesse railway.app e crie uma conta gratuita
-2. Clique em **New Project > Deploy from template**
-3. Busque por `Evolution API` e selecione o template oficial
-4. Aguarde o deploy (~3 min)
-5. Copie a URL gerada (ex: `https://evolution-api-xxx.railway.app`)
-6. Acesse `https://sua-url.railway.app` e configure:
-   - Crie uma instância chamada `selfstore`
-   - Conecte o WhatsApp escaneando o QR Code com o celular do bot
-   - Guarde a API Key gerada
+## PASSO 3 — Deploy do Bot no Railway
+1. Acesse railway.app e crie uma conta
+2. Clique em **New Project > Deploy from GitHub repo**
+3. Selecione o repositório `selfstore-bot`
+4. Em **Variables**, adicione todas as variáveis do `.env.example` com seus valores reais
+5. O Railway detecta o `package.json` e faz o deploy automaticamente
+6. Copie a URL do bot (ex: `https://selfstore-bot-xxx.railway.app`)
 
 ---
 
-## PASSO 4 — Deploy do Bot no Railway
-1. No Railway, clique em **New Project > Deploy from GitHub repo**
-2. Selecione o repositório `selfstore-bot`
-3. Em **Variables**, adicione todas as variáveis do `.env.example` com seus valores reais
-4. O Railway detecta o `package.json` e faz o deploy automaticamente
-5. Copie a URL do bot (ex: `https://selfstore-bot-xxx.railway.app`)
+## PASSO 4 — Configurar Webhook na Meta
+1. No Meta Business Manager, crie um App do tipo Business
+2. Configure o WhatsApp product e obtenha o Phone Number ID e token permanente
+3. Configure o webhook apontando para: `https://selfstore-bot-xxx.railway.app/webhook/whatsapp`
+4. Use o verify token definido em `META_WEBHOOK_VERIFY_TOKEN`
+5. Assine os campos: `messages`, `account_alerts`
 
 ---
 
-## PASSO 5 — Configurar Webhook na Evolution API
-1. No painel da Evolution API, vá em **Webhooks**
-2. Configure o webhook para sua instância `selfstore`:
-   - URL: `https://selfstore-bot-xxx.railway.app/webhook`
-   - Eventos: `messages.upsert`
-3. Salve e teste enviando uma mensagem no WhatsApp
-
----
-
-## PASSO 6 — Configurar o iDFace Pro
+## PASSO 5 — Configurar o iDFace Pro
 1. Acesse o iDFace pelo IP na rede local (ex: `192.168.1.100`)
 2. No painel do Supabase, atualize o registro do condomínio:
    ```sql
@@ -75,9 +63,9 @@ WhatsApp ←→ Evolution API ←→ Este servidor ←→ Supabase (banco)
 
 ---
 
-## PASSO 7 — Configurar o ESP32
-1. Grave o firmware no ESP32 (código separado)
-2. Configure o Wi-Fi e anote o IP local (ex: `192.168.1.101`)
+## PASSO 6 — Configurar o Raspberry Pi
+1. Instale o Raspberry Pi OS e conecte ao Wi-Fi
+2. Copie o script `geladeira.py` e configure o serviço systemd
 3. No Supabase, atualize o registro da geladeira:
    ```sql
    UPDATE geladeiras
@@ -87,10 +75,10 @@ WhatsApp ←→ Evolution API ←→ Este servidor ←→ Supabase (banco)
 
 ---
 
-## PASSO 8 — Gerar os QR Codes
+## PASSO 7 — Gerar os QR Codes
 ### QR Code de cadastro (afixar no condomínio):
 ```
-https://wa.me/55SEUNUMERO?text=Oi!+Quero+fazer+meu+cadastro+no+Self+Store+Adele+Zarzur
+https://wa.me/55SEUNUMERO?text=CADASTRO%20@Adele%20Zarzur
 ```
 
 ### QR Code da geladeira (afixar na geladeira):
