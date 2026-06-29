@@ -148,13 +148,16 @@ async function processarMensagemMeta(msg, value) {
       return
     }
 
-    // ── Admin: sessão ativa ou comando ADMIN ──
-    const adminAutorizado = await isAdmin(celular)
-    if (adminAutorizado) {
-      const sessaoAdmin = await db.buscarSessao('admin_' + celular)
-      if (sessaoAdmin || isComandoAdmin(textoMensagem)) {
+    // ── Admin: só consulta banco se há sessão admin ativa ou comando ADMIN ──
+    const sessaoAdmin = await db.buscarSessao('admin_' + celular)
+    if (sessaoAdmin || isComandoAdmin(textoMensagem)) {
+      const adminAutorizado = await isAdmin(celular)
+      if (adminAutorizado) {
         const resultado = await handleAdmin(celular, textoMensagem, tipoMensagem, imagemBase64, buttonId)
         if (resultado !== 'continuar') return
+      } else if (isComandoAdmin(textoMensagem)) {
+        await enviarTexto(celular, '⛔ Você não tem permissão de administrador.')
+        return
       }
     }
 
@@ -566,6 +569,37 @@ app.patch('/admin/condominios/:id', async (req, res) => {
     const { data, error } = await supa.from('condominios').update(req.body).eq('id', req.params.id).select().single()
     if (error) throw error
     res.json({ condominio: data })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+// ── QR CODES ─────────────────────────────────────────────────────
+const QRCode = require('qrcode')
+
+app.get('/qr/cadastro/:condominioId', async (req, res) => {
+  try {
+    const supa = getSupa()
+    const { data: cond, error } = await supa.from('condominios').select('nome').eq('id', req.params.condominioId).single()
+    if (error || !cond) return res.status(404).json({ erro: 'Condomínio não encontrado' })
+    const botNumero = config.BOT_NUMERO || config.META_PHONE_NUMBER_ID
+    const texto = encodeURIComponent(`CADASTRO @${cond.nome}`)
+    const url = `https://wa.me/${botNumero}?text=${texto}`
+    res.setHeader('Content-Type', 'image/png')
+    res.setHeader('Content-Disposition', `attachment; filename="qr-cadastro-${cond.nome.replace(/\s+/g, '-').toLowerCase()}.png"`)
+    await QRCode.toFileStream(res, url, { width: 512, margin: 2 })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+app.get('/qr/geladeira/:geladeiraId', async (req, res) => {
+  try {
+    const supa = getSupa()
+    const { data: gel, error } = await supa.from('geladeiras').select('*, condominios(nome)').eq('id', req.params.geladeiraId).single()
+    if (error || !gel) return res.status(404).json({ erro: 'Geladeira não encontrada' })
+    const botNumero = config.BOT_NUMERO || config.META_PHONE_NUMBER_ID
+    const texto = encodeURIComponent(`ABRIR ${gel.nome} @${gel.condominios?.nome || ''}`)
+    const url = `https://wa.me/${botNumero}?text=${texto}`
+    res.setHeader('Content-Type', 'image/png')
+    res.setHeader('Content-Disposition', `attachment; filename="qr-geladeira-${gel.nome.replace(/\s+/g, '-').toLowerCase()}.png"`)
+    await QRCode.toFileStream(res, url, { width: 512, margin: 2 })
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
