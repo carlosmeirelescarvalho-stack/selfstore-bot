@@ -625,7 +625,7 @@ const QRCode = require('qrcode')
 
 app.get('/qr/cadastro/:condominioId', async (req, res) => {
   try {
-    const supa = getSupa()
+    const supa = getDb()
     const { data: cond, error } = await supa.from('condominios').select('nome').eq('id', req.params.condominioId).single()
     if (error || !cond) return res.status(404).json({ erro: 'Condomínio não encontrado' })
     const botNumero = config.BOT_NUMERO || config.META_PHONE_NUMBER_ID
@@ -641,7 +641,7 @@ app.get('/qr/cadastro/:condominioId', async (req, res) => {
 
 app.get('/qr/geladeira/:geladeiraId', async (req, res) => {
   try {
-    const supa = getSupa()
+    const supa = getDb()
     const { data: gel, error } = await supa.from('geladeiras').select('*, condominios(nome)').eq('id', req.params.geladeiraId).single()
     if (error || !gel) return res.status(404).json({ erro: 'Geladeira não encontrada' })
     const botNumero = config.BOT_NUMERO || config.META_PHONE_NUMBER_ID
