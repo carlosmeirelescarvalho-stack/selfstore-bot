@@ -199,6 +199,14 @@ tr:hover td{background:var(--bg)}
 .preview-ok{color:var(--success)}
 .preview-err{color:var(--danger)}
 
+/* TABLE FILTER */
+.table-filter{display:flex;align-items:center;gap:8px;background:var(--bg);
+  border:1px solid var(--border);border-radius:var(--r);padding:7px 12px;margin-bottom:12px}
+.table-filter input{background:none;border:none;outline:none;font-family:inherit;
+  font-size:13px;color:var(--text);width:100%}
+.table-filter input::placeholder{color:var(--muted)}
+.table-filter i{color:var(--muted);font-size:15px;flex-shrink:0}
+
 @media(max-width:640px){
   .sidebar{position:fixed;left:-220px;z-index:50;transition:left .2s;height:100vh}
   .sidebar.open{left:0}
@@ -332,6 +340,10 @@ tr:hover td{background:var(--bg)}
         <button class="pill" onclick="setFiltro('aprovado',this)">Aprovados</button>
         <button class="pill" onclick="setFiltro('rejeitado',this)">Rejeitados</button>
       </div>
+      <div class="table-filter">
+        <i class="ti ti-search"></i>
+        <input type="text" placeholder="Filtrar moradores..." oninput="filtrarTabela(this.value,'moradores-lista')">
+      </div>
       <div class="card">
         <div class="card-body" id="moradores-lista">
           <div class="loading"><div class="spinner"></div>Carregando...</div>
@@ -341,6 +353,10 @@ tr:hover td{background:var(--bg)}
 
     <!-- LOGS -->
     <div class="page" id="page-logs">
+      <div class="table-filter">
+        <i class="ti ti-search"></i>
+        <input type="text" placeholder="Filtrar logs..." oninput="filtrarTabela(this.value,'logs-lista')">
+      </div>
       <div class="card">
         <div class="card-header">
           <span class="card-title">Histórico de acessos</span>
@@ -365,6 +381,10 @@ tr:hover td{background:var(--bg)}
 
     <!-- GELADEIRAS -->
     <div class="page" id="page-geladeiras">
+      <div class="table-filter">
+        <i class="ti ti-search"></i>
+        <input type="text" placeholder="Filtrar geladeiras..." oninput="filtrarTabela(this.value,'geladeiras-lista')">
+      </div>
       <div class="card">
         <div class="card-header"><span class="card-title">Geladeiras cadastradas</span></div>
         <div class="card-body" id="geladeiras-lista">
@@ -375,6 +395,10 @@ tr:hover td{background:var(--bg)}
 
     <!-- CONDOMINIOS -->
     <div class="page" id="page-condominios">
+      <div class="table-filter">
+        <i class="ti ti-search"></i>
+        <input type="text" placeholder="Filtrar condomínios..." oninput="filtrarTabela(this.value,'condominios-lista')">
+      </div>
       <div class="card">
         <div class="card-header"><span class="card-title">Condomínios</span></div>
         <div class="card-body" id="condominios-lista">
@@ -397,6 +421,10 @@ tr:hover td{background:var(--bg)}
 
     <!-- ADMINS -->
     <div class="page" id="page-admins">
+      <div class="table-filter">
+        <i class="ti ti-search"></i>
+        <input type="text" placeholder="Filtrar admins..." oninput="filtrarTabela(this.value,'admins-lista')">
+      </div>
       <div class="card">
         <div class="card-header">
           <span class="card-title">Admins WhatsApp</span>
@@ -725,7 +753,7 @@ async function carregarMoradores(busca='') {
     el.innerHTML='<div class="empty"><i class="ti ti-users"></i><p>Nenhum morador encontrado</p></div>'; return
   }
   el.innerHTML = `<div class="table-wrap"><table>
-    <thead><tr><th>Foto</th><th>Morador</th><th>Unidade</th><th>Status</th><th>T&C</th><th>Ações</th></tr></thead>
+    <thead><tr><th>Foto</th><th>Morador</th><th>Celular</th><th>Unidade</th><th>Status</th><th>T&C</th><th>Ações</th></tr></thead>
     <tbody>${moradores.map(m => `
       <tr>
         <td>${m.foto_url
@@ -733,6 +761,7 @@ async function carregarMoradores(busca='') {
           : `<div class="avatar">${iniciais(m.nome)}</div>`}</td>
         <td><div><div class="td-name">${m.nome}</div>
           <div class="td-meta">CPF: ${fmtCPFstr(m.cpf)}</div></div></td>
+        <td style="font-family:'DM Mono',monospace;font-size:12px;white-space:nowrap">${fmtCelular(m.celular_whatsapp)}</td>
         <td><div>${m.condominios?.nome||'—'}</div>
           <div class="td-meta">${m.bloco} • Apto ${m.unidade}</div></td>
         <td><span class="badge badge-${m.status}">${{pendente:'Pendente',aprovado:'Aprovado',rejeitado:'Rejeitado'}[m.status]}</span></td>
@@ -1165,6 +1194,19 @@ function iniciais(nome) { return nome?.split(' ').map(n=>n[0]).join('').substrin
 function fmtCPFstr(cpf) { return cpf?.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/,'$1.$2.$3-$4')||cpf }
 function fmtCPF(el) { let v=el.value.replace(/\D/g,'').substring(0,11); v=v.replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d)/,'$1.$2').replace(/(\d{3})(\d{1,2})$/,'$1-$2'); el.value=v }
 function fmtData(d) { if(!d) return '—'; const dt=new Date(d); return dt.toLocaleDateString('pt-BR')+' '+dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) }
+function fmtCelular(c) { if(!c) return '—'; const d=c.replace(/\D/g,''); if(d.length===13) return `+${d.slice(0,2)} (${d.slice(2,4)}) ${d.slice(4,9)}-${d.slice(9)}`; if(d.length===11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`; return c }
+function filtrarTabela(termo, containerId) {
+  const el = document.getElementById(containerId)
+  if(!el) return
+  let rows = el.querySelectorAll('tbody tr')
+  if(!rows.length) rows = el.querySelectorAll('.toggle-row')
+  if(!rows.length) rows = el.children
+  const t = termo.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
+  Array.from(rows).forEach(r => {
+    const txt = r.textContent.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'')
+    r.style.display = txt.includes(t) ? '' : 'none'
+  })
+}
 
 function fecharModal(id) { document.getElementById(id).classList.remove('open') }
 
