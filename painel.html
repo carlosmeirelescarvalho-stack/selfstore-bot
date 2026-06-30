@@ -199,13 +199,26 @@ tr:hover td{background:var(--bg)}
 .preview-ok{color:var(--success)}
 .preview-err{color:var(--danger)}
 
-/* TABLE FILTER */
+/* TABLE FILTER (global — geladeiras, condominios) */
 .table-filter{display:flex;align-items:center;gap:8px;background:var(--bg);
   border:1px solid var(--border);border-radius:var(--r);padding:7px 12px;margin-bottom:12px}
 .table-filter input{background:none;border:none;outline:none;font-family:inherit;
   font-size:13px;color:var(--text);width:100%}
 .table-filter input::placeholder{color:var(--muted)}
 .table-filter i{color:var(--muted);font-size:15px;flex-shrink:0}
+
+/* SORTABLE HEADERS */
+th.sortable{cursor:pointer;user-select:none;white-space:nowrap;transition:color .15s}
+th.sortable:hover{color:var(--text)}
+.sort-arrow{font-size:9px;margin-left:3px;opacity:.25;letter-spacing:-2px}
+.sort-arrow.asc,.sort-arrow.desc{opacity:1;color:var(--accent)}
+
+/* COLUMN FILTERS */
+.filter-row th{padding:4px 8px;background:var(--bg);border-bottom:2px solid var(--border)}
+.col-filter{width:100%;padding:5px 8px;border:1px solid var(--border);
+  border-radius:6px;font-family:inherit;font-size:11px;color:var(--text);
+  background:var(--card);outline:none;box-sizing:border-box;appearance:auto}
+.col-filter:focus{border-color:var(--accent)}
 
 @media(max-width:640px){
   .sidebar{position:fixed;left:-220px;z-index:50;transition:left .2s;height:100vh}
@@ -340,10 +353,6 @@ tr:hover td{background:var(--bg)}
         <button class="pill" onclick="setFiltro('aprovado',this)">Aprovados</button>
         <button class="pill" onclick="setFiltro('rejeitado',this)">Rejeitados</button>
       </div>
-      <div class="table-filter">
-        <i class="ti ti-search"></i>
-        <input type="text" placeholder="Filtrar moradores..." oninput="filtrarTabela(this.value,'moradores-lista')">
-      </div>
       <div class="card">
         <div class="card-body" id="moradores-lista">
           <div class="loading"><div class="spinner"></div>Carregando...</div>
@@ -353,25 +362,9 @@ tr:hover td{background:var(--bg)}
 
     <!-- LOGS -->
     <div class="page" id="page-logs">
-      <div class="table-filter">
-        <i class="ti ti-search"></i>
-        <input type="text" placeholder="Filtrar logs..." oninput="filtrarTabela(this.value,'logs-lista')">
-      </div>
       <div class="card">
         <div class="card-header">
           <span class="card-title">Histórico de acessos</span>
-          <div style="display:flex;gap:8px">
-            <select class="form-select" style="width:auto;padding:5px 10px;font-size:12px" onchange="carregarLogs()" id="filtro-tipo">
-              <option value="">Todos os tipos</option>
-              <option value="whatsapp">WhatsApp</option>
-              <option value="facial">Facial</option>
-            </select>
-            <select class="form-select" style="width:auto;padding:5px 10px;font-size:12px" onchange="carregarLogs()" id="filtro-resultado">
-              <option value="">Todos</option>
-              <option value="aberto">Abertos</option>
-              <option value="negado">Negados</option>
-            </select>
-          </div>
         </div>
         <div class="card-body" id="logs-lista">
           <div class="loading"><div class="spinner"></div>Carregando...</div>
@@ -421,10 +414,6 @@ tr:hover td{background:var(--bg)}
 
     <!-- ADMINS -->
     <div class="page" id="page-admins">
-      <div class="table-filter">
-        <i class="ti ti-search"></i>
-        <input type="text" placeholder="Filtrar admins..." oninput="filtrarTabela(this.value,'admins-lista')">
-      </div>
       <div class="card">
         <div class="card-header">
           <span class="card-title">Admins WhatsApp</span>
@@ -742,39 +731,124 @@ async function carregarDashboard() {
     </div>`).join('')
 }
 
+// ── SORT & FILTER HELPERS ─────────────────────────────────────────
+const _tbl = {
+  moradores: { data: [], sort: { col: null, asc: true } },
+  logs: { data: [], sort: { col: null, asc: true } },
+  admins: { data: [], sort: { col: null, asc: true } },
+}
+function _norm(s) { return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'') }
+function _sortArr(name, data, getVal) {
+  const s = _tbl[name].sort
+  if (!s.col) return data
+  return [...data].sort((a, b) => {
+    const va = _norm(getVal(a, s.col)), vb = _norm(getVal(b, s.col))
+    return va < vb ? (s.asc?-1:1) : va > vb ? (s.asc?1:-1) : 0
+  })
+}
+function _sortClick(name, col, renderFn) {
+  const s = _tbl[name].sort
+  if (s.col === col) s.asc = !s.asc; else { s.col = col; s.asc = true }
+  renderFn()
+}
+function _sa(name, col) {
+  const s = _tbl[name].sort
+  if (s.col !== col) return '<span class="sort-arrow">▲▼</span>'
+  return `<span class="sort-arrow ${s.asc?'asc':'desc'}">${s.asc?'▲':'▼'}</span>`
+}
+function _fv(id) { const el = document.getElementById(id); return el ? _norm(el.value) : '' }
+
 // ── MORADORES ─────────────────────────────────────────────────────
 async function carregarMoradores(busca='') {
   const params = new URLSearchParams({limit:'50'})
   if(filtroAtual!=='todos') params.set('status', filtroAtual)
   if(busca) params.set('busca', busca)
-  const { moradores, total } = await api('/admin/moradores?'+params).catch(()=>({moradores:[],total:0}))
+  const { moradores } = await api('/admin/moradores?'+params).catch(()=>({moradores:[]}))
+  _tbl.moradores.data = moradores || []
+  renderMoradoresTabela()
+}
+function renderMoradoresTabela() {
   const el = document.getElementById('moradores-lista')
-  if(!moradores || moradores.length===0) {
+  if (!_tbl.moradores.data.length) {
     el.innerHTML='<div class="empty"><i class="ti ti-users"></i><p>Nenhum morador encontrado</p></div>'; return
   }
   el.innerHTML = `<div class="table-wrap"><table>
-    <thead><tr><th>Foto</th><th>Morador</th><th>Celular</th><th>Unidade</th><th>Status</th><th>T&C</th><th>Ações</th></tr></thead>
-    <tbody>${moradores.map(m => `
+    <thead>
       <tr>
-        <td>${m.foto_url
-          ? `<img src="${m.foto_url}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;cursor:pointer" onclick="abrirFoto('${m.foto_url}')">`
-          : `<div class="avatar">${iniciais(m.nome)}</div>`}</td>
-        <td><div><div class="td-name">${m.nome}</div>
-          <div class="td-meta">CPF: ${fmtCPFstr(m.cpf)}</div></div></td>
-        <td style="font-family:'DM Mono',monospace;font-size:12px;white-space:nowrap">${fmtCelular(m.celular_whatsapp)}</td>
-        <td><div>${m.condominios?.nome||'—'}</div>
-          <div class="td-meta">${m.bloco} • Apto ${m.unidade}</div></td>
-        <td><span class="badge badge-${m.status}">${{pendente:'Pendente',aprovado:'Aprovado',rejeitado:'Rejeitado'}[m.status]}</span></td>
-        <td><span class="badge ${m.aceite_tc?'badge-approved':'badge-pending'}" style="font-size:10px">${m.aceite_tc?'Aceito':'Pendente'}</span></td>
-        <td><div class="td-actions">
-          ${m.status!=='aprovado'?`<button class="btn btn-sm btn-success" onclick="aprovar('${m.id}','${m.nome}')" title="Aprovar"><i class="ti ti-check"></i></button>`:''}
-          ${m.status!=='rejeitado'?`<button class="btn btn-sm btn-danger" onclick="rejeitar('${m.id}')" title="Rejeitar"><i class="ti ti-x"></i></button>`:''}
-          ${m.status==='aprovado'?`<button class="btn btn-sm btn-secondary" onclick="bloquear('${m.id}')" title="Bloquear"><i class="ti ti-ban"></i></button>`:''}
-          <button class="btn btn-sm btn-secondary" onclick="abrirEditMorador(${JSON.stringify(m).replace(/"/g,'&quot;')})" title="Editar"><i class="ti ti-pencil"></i></button>
-          <button class="btn btn-sm btn-danger" onclick="deletarMorador('${m.id}','${m.nome.replace(/'/g,"\\'")}')" title="Excluir"><i class="ti ti-trash"></i></button>
-        </div></td>
-      </tr>`).join('')}
-    </tbody></table></div>`
+        <th>Foto</th>
+        <th class="sortable" onclick="_sortClick('moradores','nome',renderMoradoresTbody)">Morador ${_sa('moradores','nome')}</th>
+        <th class="sortable" onclick="_sortClick('moradores','celular',renderMoradoresTbody)">Celular ${_sa('moradores','celular')}</th>
+        <th class="sortable" onclick="_sortClick('moradores','unidade',renderMoradoresTbody)">Unidade ${_sa('moradores','unidade')}</th>
+        <th class="sortable" onclick="_sortClick('moradores','status',renderMoradoresTbody)">Status ${_sa('moradores','status')}</th>
+        <th class="sortable" onclick="_sortClick('moradores','tc',renderMoradoresTbody)">T&C ${_sa('moradores','tc')}</th>
+        <th>Ações</th>
+      </tr>
+      <tr class="filter-row">
+        <th></th>
+        <th><input class="col-filter" id="fm-nome" type="text" placeholder="Nome..." oninput="renderMoradoresTbody()"></th>
+        <th><input class="col-filter" id="fm-celular" type="text" placeholder="Celular..." oninput="renderMoradoresTbody()"></th>
+        <th><input class="col-filter" id="fm-unidade" type="text" placeholder="Cond/bloco/apto..." oninput="renderMoradoresTbody()"></th>
+        <th><select class="col-filter" id="fm-status" onchange="renderMoradoresTbody()">
+          <option value="">Todos</option><option value="pendente">Pendente</option>
+          <option value="aprovado">Aprovado</option><option value="rejeitado">Rejeitado</option>
+          <option value="bloqueado">Bloqueado</option>
+        </select></th>
+        <th><select class="col-filter" id="fm-tc" onchange="renderMoradoresTbody()">
+          <option value="">Todos</option><option value="aceito">Aceito</option><option value="pendente">Pendente</option>
+        </select></th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="moradores-tbody"></tbody>
+  </table></div>`
+  renderMoradoresTbody()
+}
+function _morGetVal(m, col) {
+  if (col==='nome') return m.nome
+  if (col==='celular') return m.celular_whatsapp
+  if (col==='unidade') return `${m.condominios?.nome||''} ${m.bloco} ${m.unidade}`
+  if (col==='status') return m.status
+  if (col==='tc') return m.aceite_tc ? 'aceito' : 'pendente'
+  return ''
+}
+function renderMoradoresTbody() {
+  let data = [..._tbl.moradores.data]
+  const fNome = _fv('fm-nome'), fCel = _fv('fm-celular'), fUni = _fv('fm-unidade')
+  const fStatus = _fv('fm-status'), fTc = _fv('fm-tc')
+  if (fNome) data = data.filter(m => _norm(m.nome).includes(fNome) || _norm(m.cpf).includes(fNome))
+  if (fCel) data = data.filter(m => _norm(m.celular_whatsapp).includes(fCel))
+  if (fUni) data = data.filter(m => _norm(`${m.condominios?.nome||''} ${m.bloco} ${m.unidade}`).includes(fUni))
+  if (fStatus) data = data.filter(m => m.status === fStatus)
+  if (fTc) data = data.filter(m => (m.aceite_tc?'aceito':'pendente') === fTc)
+  data = _sortArr('moradores', data, _morGetVal)
+  const statusLabel = {pendente:'Pendente',aprovado:'Aprovado',rejeitado:'Rejeitado',bloqueado:'Bloqueado'}
+  document.getElementById('moradores-tbody').innerHTML = data.map(m => `
+    <tr>
+      <td>${m.foto_url
+        ? `<img src="${m.foto_url}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;cursor:pointer" onclick="abrirFoto('${m.foto_url}')">`
+        : `<div class="avatar">${iniciais(m.nome)}</div>`}</td>
+      <td><div><div class="td-name">${m.nome}</div>
+        <div class="td-meta">CPF: ${fmtCPFstr(m.cpf)}</div></div></td>
+      <td style="font-family:'DM Mono',monospace;font-size:12px;white-space:nowrap">${fmtCelular(m.celular_whatsapp)}</td>
+      <td><div>${m.condominios?.nome||'—'}</div>
+        <div class="td-meta">${m.bloco} • Apto ${m.unidade}</div></td>
+      <td><span class="badge badge-${m.status}">${statusLabel[m.status]||m.status}</span></td>
+      <td><span class="badge ${m.aceite_tc?'badge-approved':'badge-pending'}" style="font-size:10px">${m.aceite_tc?'Aceito':'Pendente'}</span></td>
+      <td><div class="td-actions">
+        ${m.status!=='aprovado'?`<button class="btn btn-sm btn-success" onclick="aprovar('${m.id}','${m.nome}')" title="Aprovar"><i class="ti ti-check"></i></button>`:''}
+        ${m.status!=='rejeitado'?`<button class="btn btn-sm btn-danger" onclick="rejeitar('${m.id}')" title="Rejeitar"><i class="ti ti-x"></i></button>`:''}
+        ${m.status==='aprovado'?`<button class="btn btn-sm btn-secondary" onclick="bloquear('${m.id}')" title="Bloquear"><i class="ti ti-ban"></i></button>`:''}
+        <button class="btn btn-sm btn-secondary" onclick="abrirEditMorador(${JSON.stringify(m).replace(/"/g,'&quot;')})" title="Editar"><i class="ti ti-pencil"></i></button>
+        <button class="btn btn-sm btn-danger" onclick="deletarMorador('${m.id}','${m.nome.replace(/'/g,"\\'")}')" title="Excluir"><i class="ti ti-trash"></i></button>
+      </div></td>
+    </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">Nenhum resultado</td></tr>'
+  // Update sort arrows in header
+  const ths = document.querySelectorAll('#moradores-lista thead tr:first-child th.sortable')
+  const cols = ['nome','celular','unidade','status','tc']
+  ths.forEach((th, i) => {
+    const arrow = th.querySelector('.sort-arrow')
+    if (arrow) arrow.outerHTML = _sa('moradores', cols[i])
+  })
 }
 
 function setFiltro(f, el) {
@@ -877,27 +951,67 @@ async function confirmarImport() {
 
 // ── LOGS ─────────────────────────────────────────────────────────
 async function carregarLogs() {
-  const tipo = document.getElementById('filtro-tipo')?.value||''
-  const resultado = document.getElementById('filtro-resultado')?.value||''
-  const params = new URLSearchParams({limit:'50'})
-  if(tipo) params.set('tipo', tipo)
-  if(resultado) params.set('resultado', resultado)
-  const { logs } = await api('/admin/logs?'+params).catch(()=>({logs:[]}))
+  const { logs } = await api('/admin/logs?limit=50').catch(()=>({logs:[]}))
+  _tbl.logs.data = logs || []
+  renderLogsTabela()
+}
+function renderLogsTabela() {
   const el = document.getElementById('logs-lista')
-  if(!logs||logs.length===0) {
+  if (!_tbl.logs.data.length) {
     el.innerHTML='<div class="empty"><i class="ti ti-list"></i><p>Sem registros</p></div>'; return
   }
   el.innerHTML = `<div class="table-wrap"><table>
-    <thead><tr><th>Morador</th><th>Tipo</th><th>Local</th><th>Resultado</th><th>Horário</th></tr></thead>
-    <tbody>${logs.map(l=>`
+    <thead>
       <tr>
-        <td>${l.moradores?.nome||'Desconhecido'}</td>
-        <td>${l.tipo}</td>
-        <td>${l.geladeiras?.nome||'Porta entrada'}</td>
-        <td><span class="badge badge-${l.resultado==='aberto'?'approved':'rejected'}">${l.resultado}</span></td>
-        <td style="font-size:11px;color:var(--muted)">${fmtData(l.criado_em)}</td>
-      </tr>`).join('')}
-    </tbody></table></div>`
+        <th class="sortable" onclick="_sortClick('logs','morador',renderLogsTbody)">Morador ${_sa('logs','morador')}</th>
+        <th class="sortable" onclick="_sortClick('logs','tipo',renderLogsTbody)">Tipo ${_sa('logs','tipo')}</th>
+        <th class="sortable" onclick="_sortClick('logs','local',renderLogsTbody)">Local ${_sa('logs','local')}</th>
+        <th class="sortable" onclick="_sortClick('logs','resultado',renderLogsTbody)">Resultado ${_sa('logs','resultado')}</th>
+        <th class="sortable" onclick="_sortClick('logs','horario',renderLogsTbody)">Horário ${_sa('logs','horario')}</th>
+      </tr>
+      <tr class="filter-row">
+        <th><input class="col-filter" id="fl-morador" type="text" placeholder="Nome..." oninput="renderLogsTbody()"></th>
+        <th><select class="col-filter" id="fl-tipo" onchange="renderLogsTbody()">
+          <option value="">Todos</option><option value="whatsapp">WhatsApp</option><option value="facial">Facial</option>
+        </select></th>
+        <th><input class="col-filter" id="fl-local" type="text" placeholder="Geladeira..." oninput="renderLogsTbody()"></th>
+        <th><select class="col-filter" id="fl-resultado" onchange="renderLogsTbody()">
+          <option value="">Todos</option><option value="aberto">Aberto</option><option value="negado">Negado</option>
+        </select></th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="logs-tbody"></tbody>
+  </table></div>`
+  renderLogsTbody()
+}
+function _logGetVal(l, col) {
+  if (col==='morador') return l.moradores?.nome||''
+  if (col==='tipo') return l.tipo||''
+  if (col==='local') return l.geladeiras?.nome||''
+  if (col==='resultado') return l.resultado||''
+  if (col==='horario') return l.criado_em||''
+  return ''
+}
+function renderLogsTbody() {
+  let data = [..._tbl.logs.data]
+  const fMor = _fv('fl-morador'), fTipo = _fv('fl-tipo'), fLocal = _fv('fl-local'), fRes = _fv('fl-resultado')
+  if (fMor) data = data.filter(l => _norm(l.moradores?.nome).includes(fMor))
+  if (fTipo) data = data.filter(l => l.tipo === fTipo)
+  if (fLocal) data = data.filter(l => _norm(l.geladeiras?.nome).includes(fLocal))
+  if (fRes) data = data.filter(l => l.resultado === fRes)
+  data = _sortArr('logs', data, _logGetVal)
+  document.getElementById('logs-tbody').innerHTML = data.map(l => `
+    <tr>
+      <td>${l.moradores?.nome||'Desconhecido'}</td>
+      <td>${l.tipo}</td>
+      <td>${l.geladeiras?.nome||'Porta entrada'}</td>
+      <td><span class="badge badge-${l.resultado==='aberto'?'approved':'rejected'}">${l.resultado}</span></td>
+      <td style="font-size:11px;color:var(--muted)">${fmtData(l.criado_em)}</td>
+    </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:20px">Nenhum resultado</td></tr>'
+  const ths = document.querySelectorAll('#logs-lista thead tr:first-child th.sortable')
+  const cols = ['morador','tipo','local','resultado','horario']
+  ths.forEach((th, i) => { const a = th.querySelector('.sort-arrow'); if(a) a.outerHTML = _sa('logs', cols[i]) })
 }
 
 // ── GELADEIRAS ───────────────────────────────────────────────────
@@ -1079,62 +1193,80 @@ let adminsCache = []
 async function carregarAdmins() {
   const { admins } = await api('/admin/admins').catch(()=>({admins:[]}))
   adminsCache = admins || []
-  const el = document.getElementById('admins-lista')
-  if(!admins||admins.length===0) {
-    el.innerHTML='<div class="empty"><i class="ti ti-shield"></i><p>Nenhum admin cadastrado</p></div>'; return
-  }
-  el.innerHTML = `<div class="table-wrap"><table>
-    <thead><tr><th>Foto</th><th>Nome</th><th>CPF</th><th>Celular</th><th>Condomínios</th><th>Ações</th></tr></thead>
-    <tbody>${admins.map(a=>{
-      const conds = (a.admins_condominios||[]).map(ac=>ac.condominios?.nome).filter(Boolean)
-      const fotoMorador = a._foto_morador || null
-      return `<tr>
-        <td>${fotoMorador
-          ? `<img src="${fotoMorador}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;cursor:pointer" onclick="abrirFoto('${fotoMorador}')">`
-          : `<div class="avatar">${iniciais(a.nome||'?')}</div>`}</td>
-        <td class="td-name">${a.nome||'—'}</td>
-        <td style="font-size:12px">${a.cpf?fmtCPFstr(a.cpf):'—'}</td>
-        <td style="font-family:'DM Mono',monospace;font-size:12px">${a.celular}</td>
-        <td>${conds.length?conds.map(c=>`<span class="badge badge-approved" style="font-size:10px;margin:1px">${c}</span>`).join(' '):'<span style="color:var(--muted);font-size:11px">Nenhum</span>'}</td>
-        <td><div class="td-actions">
-          <button class="btn btn-sm btn-secondary" onclick="abrirEditAdmin('${a.id}')" title="Editar"><i class="ti ti-pencil"></i></button>
-          <button class="btn btn-sm btn-danger" onclick="removerAdmin('${a.id}','${(a.nome||'').replace(/'/g,"\\'")}')" title="Remover"><i class="ti ti-trash"></i></button>
-        </div></td>
-      </tr>`}).join('')}
-    </tbody></table></div>`
-
+  _tbl.admins.data = admins || []
   // Buscar fotos de moradores vinculados por CPF
-  for(const a of admins) {
+  for(const a of admins||[]) {
     if(!a.cpf) continue
     const cpfLimpo = a.cpf.replace(/\D/g,'')
     const { moradores } = await api(`/admin/moradores?busca=${cpfLimpo}&limit=1`).catch(()=>({moradores:[]}))
-    if(moradores?.[0]?.foto_url) {
-      a._foto_morador = moradores[0].foto_url
-    }
+    if(moradores?.[0]?.foto_url) a._foto_morador = moradores[0].foto_url
   }
-  // Re-render with photos
-  const temFoto = admins.some(a=>a._foto_morador)
-  if(temFoto) {
-    const tbody = el.querySelector('tbody')
-    if(tbody) {
-      tbody.innerHTML = admins.map(a=>{
-        const conds = (a.admins_condominios||[]).map(ac=>ac.condominios?.nome).filter(Boolean)
-        return `<tr>
-          <td>${a._foto_morador
-            ? `<img src="${a._foto_morador}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;cursor:pointer" onclick="abrirFoto('${a._foto_morador}')">`
-            : `<div class="avatar">${iniciais(a.nome||'?')}</div>`}</td>
-          <td class="td-name">${a.nome||'—'}</td>
-          <td style="font-size:12px">${a.cpf?fmtCPFstr(a.cpf):'—'}</td>
-          <td style="font-family:'DM Mono',monospace;font-size:12px">${a.celular}</td>
-          <td>${conds.length?conds.map(c=>`<span class="badge badge-approved" style="font-size:10px;margin:1px">${c}</span>`).join(' '):'<span style="color:var(--muted);font-size:11px">Nenhum</span>'}</td>
-          <td><div class="td-actions">
-            <button class="btn btn-sm btn-secondary" onclick="abrirEditAdmin('${a.id}')" title="Editar"><i class="ti ti-pencil"></i></button>
-            <button class="btn btn-sm btn-danger" onclick="removerAdmin('${a.id}','${(a.nome||'').replace(/'/g,"\\'")}')" title="Remover"><i class="ti ti-trash"></i></button>
-          </div></td>
-        </tr>`
-      }).join('')
-    }
+  renderAdminsTabela()
+}
+function renderAdminsTabela() {
+  const el = document.getElementById('admins-lista')
+  if (!_tbl.admins.data.length) {
+    el.innerHTML='<div class="empty"><i class="ti ti-shield"></i><p>Nenhum admin cadastrado</p></div>'; return
   }
+  el.innerHTML = `<div class="table-wrap"><table>
+    <thead>
+      <tr>
+        <th>Foto</th>
+        <th class="sortable" onclick="_sortClick('admins','nome',renderAdminsTbody)">Nome ${_sa('admins','nome')}</th>
+        <th class="sortable" onclick="_sortClick('admins','cpf',renderAdminsTbody)">CPF ${_sa('admins','cpf')}</th>
+        <th class="sortable" onclick="_sortClick('admins','celular',renderAdminsTbody)">Celular ${_sa('admins','celular')}</th>
+        <th class="sortable" onclick="_sortClick('admins','cond',renderAdminsTbody)">Condomínios ${_sa('admins','cond')}</th>
+        <th>Ações</th>
+      </tr>
+      <tr class="filter-row">
+        <th></th>
+        <th><input class="col-filter" id="fa-nome" type="text" placeholder="Nome..." oninput="renderAdminsTbody()"></th>
+        <th><input class="col-filter" id="fa-cpf" type="text" placeholder="CPF..." oninput="renderAdminsTbody()"></th>
+        <th><input class="col-filter" id="fa-celular" type="text" placeholder="Celular..." oninput="renderAdminsTbody()"></th>
+        <th><input class="col-filter" id="fa-cond" type="text" placeholder="Condomínio..." oninput="renderAdminsTbody()"></th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="admins-tbody"></tbody>
+  </table></div>`
+  renderAdminsTbody()
+}
+function _admGetVal(a, col) {
+  if (col==='nome') return a.nome||''
+  if (col==='cpf') return a.cpf||''
+  if (col==='celular') return a.celular||''
+  if (col==='cond') return _admConds(a).join(', ')
+  return ''
+}
+function _admConds(a) { return (a.admins_condominios||[]).map(ac=>ac.condominios?.nome).filter(Boolean) }
+function renderAdminsTbody() {
+  let data = [..._tbl.admins.data]
+  const fNome = _fv('fa-nome'), fCpf = _fv('fa-cpf'), fCel = _fv('fa-celular'), fCond = _fv('fa-cond')
+  if (fNome) data = data.filter(a => _norm(a.nome).includes(fNome))
+  if (fCpf) data = data.filter(a => _norm(a.cpf).includes(fCpf))
+  if (fCel) data = data.filter(a => _norm(a.celular).includes(fCel))
+  if (fCond) data = data.filter(a => _admConds(a).some(c => _norm(c).includes(fCond)))
+  data = _sortArr('admins', data, _admGetVal)
+  document.getElementById('admins-tbody').innerHTML = data.map(a => {
+    const conds = _admConds(a)
+    return `<tr>
+      <td>${a._foto_morador
+        ? `<img src="${a._foto_morador}" style="width:32px;height:32px;border-radius:50%;object-fit:cover;cursor:pointer" onclick="abrirFoto('${a._foto_morador}')">`
+        : `<div class="avatar">${iniciais(a.nome||'?')}</div>`}</td>
+      <td class="td-name">${a.nome||'—'}</td>
+      <td style="font-size:12px">${a.cpf?fmtCPFstr(a.cpf):'—'}</td>
+      <td style="font-family:'DM Mono',monospace;font-size:12px">${a.celular}</td>
+      <td>${conds.length?conds.map(c=>`<span class="badge badge-approved" style="font-size:10px;margin:1px">${c}</span>`).join(' '):'<span style="color:var(--muted);font-size:11px">Nenhum</span>'}</td>
+      <td><div class="td-actions">
+        <button class="btn btn-sm btn-secondary" onclick="abrirEditAdmin('${a.id}')" title="Editar"><i class="ti ti-pencil"></i></button>
+        <button class="btn btn-sm btn-danger" onclick="removerAdmin('${a.id}','${(a.nome||'').replace(/'/g,"\\'")}')" title="Remover"><i class="ti ti-trash"></i></button>
+      </div></td>
+    </tr>`
+  }).join('') || '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:20px">Nenhum resultado</td></tr>'
+  const cols = ['nome','cpf','celular','cond']
+  document.querySelectorAll('#admins-lista thead tr:first-child th.sortable').forEach((th,i) => {
+    const a = th.querySelector('.sort-arrow'); if(a) a.outerHTML = _sa('admins', cols[i])
+  })
 }
 function abrirModalAdmin() {
   document.getElementById('admin-edit-id').value = ''
