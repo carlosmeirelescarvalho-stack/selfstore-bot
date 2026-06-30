@@ -5,6 +5,9 @@ const config = require('./config')
 const { enviarTexto, enviarBotoes, notificarAdmin, MSG } = require('./whatsapp')
 const { isMaiorDeIdade } = require('./validacao')
 
+const _alertasBloqueioGel = new Map()
+const DEBOUNCE_BLOQUEIO_MS = 30 * 60 * 1000
+
 function isComandoGeladeira(mensagem) {
   return mensagem.trim().toUpperCase().startsWith('ABRIR ')
 }
@@ -52,6 +55,20 @@ async function handleGeladeira(celular, mensagem, buttonId) {
         { id: 'fluxo0_ajuda', titulo: 'Falar com suporte' },
       ])
       await db.registrarLog(morador.id, null, 'whatsapp', 'negado', 'cadastro bloqueado')
+      const agora = Date.now()
+      const ultimo = _alertasBloqueioGel.get(morador.id)
+      if (!ultimo || (agora - ultimo) >= DEBOUNCE_BLOQUEIO_MS) {
+        _alertasBloqueioGel.set(morador.id, agora)
+        const hora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+        await notificarAdmin(
+          `⚠️ *Tentativa de acesso — morador bloqueado*\n\n` +
+          `Morador: ${morador.nome}\n` +
+          `Celular: ${celular}\n` +
+          `Via: QR Code (geladeira)\n` +
+          `Horário: ${hora}`,
+          morador.condominio_id
+        )
+      }
       return
     }
 

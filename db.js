@@ -38,6 +38,17 @@ async function buscarMoradorPorCPF(cpf) {
   return data
 }
 
+async function buscarMoradorPorCpfNumerico(cpfInt) {
+  const cpfStr = String(cpfInt).padStart(11, '0')
+  const { data, error } = await supabase()
+    .from('moradores')
+    .select('*, condominios(nome)')
+    .eq('cpf', cpfStr)
+    .single()
+  if (error && error.code !== 'PGRST116') throw error
+  return data
+}
+
 async function criarMorador(dados) {
   const { data, error } = await supabase()
     .from('moradores')
@@ -399,6 +410,7 @@ module.exports = {
   supabase,
   buscarMoradorPorCelular,
   buscarMoradorPorCPF,
+  buscarMoradorPorCpfNumerico,
   criarMorador,
   atualizarStatusMorador,
   atualizarAceiteTCMorador,
