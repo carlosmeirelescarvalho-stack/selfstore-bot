@@ -41,6 +41,18 @@ cron.schedule('0 8 * * *', async () => {
   }
 }, { timezone: 'America/Sao_Paulo' })
 
+// ─── DEBOUNCE — alertas bloqueio (30 min por morador) ────────────
+const _alertasBloqueio = new Map()
+const DEBOUNCE_BLOQUEIO_MS = 30 * 60 * 1000
+
+function podeAlertarBloqueio(moradorId) {
+  const agora = Date.now()
+  const ultimo = _alertasBloqueio.get(moradorId)
+  if (ultimo && (agora - ultimo) < DEBOUNCE_BLOQUEIO_MS) return false
+  _alertasBloqueio.set(moradorId, agora)
+  return true
+}
+
 // ─── CRON — monitoramento Pi offline (a cada 15 min) ─────────────
 const _alertasRecentes = new Map()
 
@@ -263,6 +275,17 @@ async function handleFluxo0(celular, texto, buttonId) {
     await enviarBotoes(celular, MSG.acessoBloqueado(), [
       { id: 'fluxo0_ajuda', titulo: 'Falar com suporte' },
     ])
+    if (podeAlertarBloqueio(morador.id)) {
+      const hora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+      await notificarAdmin(
+        `⚠️ *Tentativa de acesso — morador bloqueado*\n\n` +
+        `Morador: ${morador.nome}\n` +
+        `Celular: ${celular}\n` +
+        `Via: WhatsApp (mensagem direta)\n` +
+        `Horário: ${hora}`,
+        morador.condominio_id
+      )
+    }
   } else {
     await enviarBotoes(celular, `${MSG.apresentacao()}\n\n${MSG.naoCadastrado()}`, [
       { id: 'iniciar_cadastro', titulo: 'Fazer cadastro' },
@@ -325,9 +348,24 @@ app.post('/webhook/idface', async (req, res) => {
   try {
     const evento = req.body
     if (!evento.user_id) return
+    const negado = evento.result !== 'granted'
     await db.registrarLog(evento.user_id, null, 'facial',
-      evento.result === 'granted' ? 'aberto' : 'negado',
-      evento.result !== 'granted' ? evento.result : null)
+      negado ? 'negado' : 'aberto',
+      negado ? evento.result : null)
+
+    if (negado) {
+      const morador = await db.buscarMoradorPorCpfNumerico(evento.user_id)
+      if (morador && morador.status === 'bloqueado' && podeAlertarBloqueio(morador.id)) {
+        const hora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+        await notificarAdmin(
+          `⚠️ *Tentativa de acesso — morador bloqueado*\n\n` +
+          `Morador: ${morador.nome}\n` +
+          `Via: Reconhecimento facial (iDFace)\n` +
+          `Horário: ${hora}`,
+          morador.condominio_id
+        )
+      }
+    }
   } catch (err) {
     console.error('Erro webhook iDFace:', err)
   }
