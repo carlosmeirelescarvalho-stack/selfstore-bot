@@ -585,6 +585,23 @@ tr:hover td{background:var(--bg)}
   </div>
 </div>
 
+<div class="modal-overlay" id="modal-qr">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-qr-title">QR Code</div>
+      <button class="modal-close" onclick="fecharModal('modal-qr')"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body" style="display:flex;flex-direction:column;align-items:center;gap:16px;padding:24px">
+      <div id="qr-loading" style="display:none"><div class="spinner"></div></div>
+      <div id="qr-erro" style="display:none;color:var(--danger);font-size:13px"></div>
+      <img id="qr-img" src="" style="display:none;width:300px;height:300px;border-radius:8px">
+    </div>
+    <div class="modal-footer" id="qr-footer" style="display:none">
+      <button class="btn btn-primary" onclick="downloadQR()"><i class="ti ti-download"></i> Baixar PNG</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── CONFIG ─────────────────────────────────────────────────────────
 const API = window.location.origin
@@ -897,9 +914,9 @@ async function carregarGeladeiras() {
           <span class="slider"></span>
         </label>
       </div>
-      <a class="btn btn-sm btn-secondary" href="/qr/geladeira/${g.id}" download style="text-decoration:none;display:inline-flex;align-items:center;gap:4px">
+      <button class="btn btn-sm btn-secondary" onclick="abrirQR('/qr/geladeira/${g.id}','QR — ${g.nome}','qr-geladeira-${g.nome.replace(/\\s+/g,'-').toLowerCase()}.png')">
         <i class="ti ti-qrcode"></i>QR
-      </a>
+      </button>
       <span style="width:8px;height:8px;border-radius:50%;background:${g.esp32_ip?'var(--accent)':'var(--border)'}"></span>
     </div>`).join('')
 }
@@ -931,9 +948,9 @@ async function carregarCondominios2() {
       <button class="btn btn-sm btn-secondary" onclick="verBlocos('${c.id}','${c.nome}')">
         <i class="ti ti-building"></i>Blocos
       </button>
-      <a class="btn btn-sm btn-secondary" href="/qr/cadastro/${c.id}" download style="text-decoration:none">
+      <button class="btn btn-sm btn-secondary" onclick="abrirQR('/qr/cadastro/${c.id}','QR Cadastro — ${c.nome}','qr-cadastro-${c.nome.replace(/\\s+/g,'-').toLowerCase()}.png')">
         <i class="ti ti-qrcode"></i>QR Cadastro
-      </a>
+      </button>
       <div style="display:flex;align-items:center;gap:8px">
         <span id="auto-label-${c.id}" style="font-size:11px;color:${c.flag_auto_aprovacao?'var(--success)':'var(--muted)'};white-space:nowrap">
           Aprovação automática: <strong>${c.flag_auto_aprovacao?'Ativo':'Inativo'}</strong>
@@ -1167,6 +1184,43 @@ function fmtCPF(el) { let v=el.value.replace(/\D/g,'').substring(0,11); v=v.repl
 function fmtData(d) { if(!d) return '—'; const dt=new Date(d); return dt.toLocaleDateString('pt-BR')+' '+dt.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) }
 
 function fecharModal(id) { document.getElementById(id).classList.remove('open') }
+
+let _qrFilename = 'qr-code.png'
+async function abrirQR(url, titulo, filename) {
+  _qrFilename = filename
+  document.getElementById('modal-qr-title').textContent = titulo
+  document.getElementById('qr-loading').style.display = 'block'
+  document.getElementById('qr-img').style.display = 'none'
+  document.getElementById('qr-erro').style.display = 'none'
+  document.getElementById('qr-footer').style.display = 'none'
+  document.getElementById('modal-qr').classList.add('open')
+  try {
+    const res = await fetch(url)
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ erro: 'Erro ao gerar QR Code' }))
+      throw new Error(err.erro || 'Erro ao gerar QR Code')
+    }
+    const blob = await res.blob()
+    const img = document.getElementById('qr-img')
+    img.src = URL.createObjectURL(blob)
+    img.style.display = 'block'
+    document.getElementById('qr-footer').style.display = 'flex'
+  } catch (e) {
+    const el = document.getElementById('qr-erro')
+    el.textContent = e.message
+    el.style.display = 'block'
+  } finally {
+    document.getElementById('qr-loading').style.display = 'none'
+  }
+}
+function downloadQR() {
+  const img = document.getElementById('qr-img')
+  if (!img.src) return
+  const a = document.createElement('a')
+  a.href = img.src
+  a.download = _qrFilename
+  a.click()
+}
 
 let notifTimer
 function notif(msg, tipo='success') {

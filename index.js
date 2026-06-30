@@ -591,11 +591,13 @@ app.get('/qr/cadastro/:condominioId', async (req, res) => {
     const { data: cond, error } = await supa.from('condominios').select('nome').eq('id', req.params.condominioId).single()
     if (error || !cond) return res.status(404).json({ erro: 'Condomínio não encontrado' })
     const botNumero = config.BOT_NUMERO || config.META_PHONE_NUMBER_ID
+    if (!botNumero) return res.status(500).json({ erro: 'BOT_NUMERO não configurado' })
     const texto = encodeURIComponent(`CADASTRO @${cond.nome}`)
     const url = `https://wa.me/${botNumero}?text=${texto}`
+    const png = await QRCode.toBuffer(url, { width: 512, margin: 2 })
     res.setHeader('Content-Type', 'image/png')
-    res.setHeader('Content-Disposition', `attachment; filename="qr-cadastro-${cond.nome.replace(/\s+/g, '-').toLowerCase()}.png"`)
-    await QRCode.toFileStream(res, url, { width: 512, margin: 2 })
+    res.setHeader('Content-Disposition', 'inline')
+    res.send(png)
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
@@ -605,11 +607,13 @@ app.get('/qr/geladeira/:geladeiraId', async (req, res) => {
     const { data: gel, error } = await supa.from('geladeiras').select('*, condominios(nome)').eq('id', req.params.geladeiraId).single()
     if (error || !gel) return res.status(404).json({ erro: 'Geladeira não encontrada' })
     const botNumero = config.BOT_NUMERO || config.META_PHONE_NUMBER_ID
+    if (!botNumero) return res.status(500).json({ erro: 'BOT_NUMERO não configurado' })
     const texto = encodeURIComponent(`ABRIR ${gel.nome} @${gel.condominios?.nome || ''}`)
     const url = `https://wa.me/${botNumero}?text=${texto}`
+    const png = await QRCode.toBuffer(url, { width: 512, margin: 2 })
     res.setHeader('Content-Type', 'image/png')
-    res.setHeader('Content-Disposition', `attachment; filename="qr-geladeira-${gel.nome.replace(/\s+/g, '-').toLowerCase()}.png"`)
-    await QRCode.toFileStream(res, url, { width: 512, margin: 2 })
+    res.setHeader('Content-Disposition', 'inline')
+    res.send(png)
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
