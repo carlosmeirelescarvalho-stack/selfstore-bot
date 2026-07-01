@@ -229,6 +229,11 @@ async function processarMensagemMeta(msg, value) {
 
     // ── QR Code de cadastro por condomínio (ex: "CADASTRO @Adele Zarzur") ──
     if (tipoMensagem === 'text' && textoMensagem.trim().toUpperCase().startsWith('CADASTRO')) {
+      const moradorExistente = await db.buscarMoradorPorCelular(celular)
+      if (moradorExistente) {
+        await handleFluxo0(celular, textoMensagem, null)
+        return
+      }
       const matchCond = textoMensagem.match(/@(.+)/i)
       const nomeCond = matchCond ? matchCond[1].trim() : null
       await iniciarCadastro(celular, nomeCond)
@@ -625,33 +630,29 @@ const QRCode = require('qrcode')
 
 app.get('/qr/cadastro/:condominioId', async (req, res) => {
   try {
-    const supa = getDb()
+    const supa = getSupa()
     const { data: cond, error } = await supa.from('condominios').select('nome').eq('id', req.params.condominioId).single()
     if (error || !cond) return res.status(404).json({ erro: 'Condomínio não encontrado' })
     const botNumero = config.BOT_NUMERO || config.META_PHONE_NUMBER_ID
-    if (!botNumero) return res.status(500).json({ erro: 'BOT_NUMERO não configurado' })
     const texto = encodeURIComponent(`CADASTRO @${cond.nome}`)
     const url = `https://wa.me/${botNumero}?text=${texto}`
-    const png = await QRCode.toBuffer(url, { width: 512, margin: 2 })
     res.setHeader('Content-Type', 'image/png')
-    res.setHeader('Content-Disposition', 'inline')
-    res.send(png)
+    res.setHeader('Content-Disposition', `attachment; filename="qr-cadastro-${cond.nome.replace(/\s+/g, '-').toLowerCase()}.png"`)
+    await QRCode.toFileStream(res, url, { width: 512, margin: 2 })
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
 app.get('/qr/geladeira/:geladeiraId', async (req, res) => {
   try {
-    const supa = getDb()
+    const supa = getSupa()
     const { data: gel, error } = await supa.from('geladeiras').select('*, condominios(nome)').eq('id', req.params.geladeiraId).single()
     if (error || !gel) return res.status(404).json({ erro: 'Geladeira não encontrada' })
     const botNumero = config.BOT_NUMERO || config.META_PHONE_NUMBER_ID
-    if (!botNumero) return res.status(500).json({ erro: 'BOT_NUMERO não configurado' })
     const texto = encodeURIComponent(`ABRIR ${gel.nome} @${gel.condominios?.nome || ''}`)
     const url = `https://wa.me/${botNumero}?text=${texto}`
-    const png = await QRCode.toBuffer(url, { width: 512, margin: 2 })
     res.setHeader('Content-Type', 'image/png')
-    res.setHeader('Content-Disposition', 'inline')
-    res.send(png)
+    res.setHeader('Content-Disposition', `attachment; filename="qr-geladeira-${gel.nome.replace(/\s+/g, '-').toLowerCase()}.png"`)
+    await QRCode.toFileStream(res, url, { width: 512, margin: 2 })
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
