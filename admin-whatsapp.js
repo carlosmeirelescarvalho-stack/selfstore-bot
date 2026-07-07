@@ -3,7 +3,7 @@
 const db = require('./db')
 const config = require('./config')
 const { enviarTexto, enviarBotoes, notificarAdmin, MSG } = require('./whatsapp')
-const { validarCPF, validarDataNascimento, validarNomeCompleto, validarUnidade, normalizarCelular, dataParaISO, formatarDataNasc } = require('./validacao')
+const { validarCPF, validarDataNascimento, validarNomeCompleto, validarUnidade, normalizarCelular, dataParaISO, formatarDataNasc, numEmoji } = require('./validacao')
 
 async function isAdmin(celular) {
   const admins = await db.listarAdmins()
@@ -270,7 +270,7 @@ async function processarCadastroAdmin(celular, texto, tipoMensagem, imagemBase64
       dados.celular_whatsapp = celularNorm
 
       const condominios = await db.listarCondominios()
-      const lista = condominios.map((c, i) => `${i + 1}️⃣ ${c.nome}`).join('\n')
+      const lista = condominios.map((c, i) => `${numEmoji(i + 1)} ${c.nome}`).join('\n')
       dados._condominios = condominios
       await db.salvarSessao(sk, 'cadastro_condominio', dados)
       await enviarTexto(celular, `Condomínio:\n\n${lista}\n\n_Digite o número_`)
@@ -290,7 +290,7 @@ async function processarCadastroAdmin(celular, texto, tipoMensagem, imagemBase64
 
       const blocos = await db.listarBlocosPorCondominio(dados.condominio_id)
       if (blocos.length > 0) {
-        const lista = blocos.map((b, i) => `${i + 1}️⃣ ${b.nome}`).join('\n')
+        const lista = blocos.map((b, i) => `${numEmoji(i + 1)} ${b.nome}`).join('\n')
         dados._blocos = blocos
         await db.salvarSessao(sk, 'cadastro_bloco', dados)
         await enviarTexto(celular, `Bloco:\n\n${lista}\n\n_Digite o número_`)
@@ -397,14 +397,14 @@ async function processarCadastroAdmin(celular, texto, tipoMensagem, imagemBase64
       }
       if (destino === 'cadastro_condominio') {
         const condominios = await db.listarCondominios()
-        const lista = condominios.map((c, i) => `${i + 1}️⃣ ${c.nome}`).join('\n')
+        const lista = condominios.map((c, i) => `${numEmoji(i + 1)} ${c.nome}`).join('\n')
         dados._condominios = condominios
         await db.salvarSessao(sk, destino, dados)
         await enviarTexto(celular, `Condomínio:\n\n${lista}\n\n_Digite o número_`)
       } else if (destino === 'cadastro_bloco') {
         const blocos = await db.listarBlocosPorCondominio(dados.condominio_id)
         if (blocos.length > 0) {
-          const lista = blocos.map((b, i) => `${i + 1}️⃣ ${b.nome}`).join('\n')
+          const lista = blocos.map((b, i) => `${numEmoji(i + 1)} ${b.nome}`).join('\n')
           dados._blocos = blocos
           await db.salvarSessao(sk, destino, dados)
           await enviarTexto(celular, `Bloco:\n\n${lista}\n\n_Digite o número_`)
