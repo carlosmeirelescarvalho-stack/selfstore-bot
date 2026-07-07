@@ -133,6 +133,11 @@ function dataParaISO(dataNasc) {
   return `${nasc.getFullYear()}-${m}-${d}`
 }
 
+const KEYCAPS = ['0️⃣','1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣']
+function numEmoji(n) {
+  return n >= 1 && n <= 9 ? KEYCAPS[n] : `*${n}.*`
+}
+
 module.exports = {
   validarCPF,
   formatarCPF,
@@ -147,4 +152,5 @@ module.exports = {
   formatarCelular,
   formatarDataNasc,
   dataParaISO,
+  numEmoji,
 }
