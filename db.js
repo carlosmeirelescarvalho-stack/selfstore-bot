@@ -78,6 +78,15 @@ async function atualizarAceiteTCMorador(id) {
   if (error) throw error
 }
 
+async function atualizarUltimoAcesso(moradorId) {
+  try {
+    await supabase()
+      .from('moradores')
+      .update({ ultimo_acesso: new Date().toISOString() })
+      .eq('id', moradorId)
+  } catch (e) { console.error('Erro ao atualizar ultimo_acesso:', e.message) }
+}
+
 async function atualizarFotoMorador(id, fotoUrl) {
   const { error } = await supabase()
     .from('moradores')
@@ -415,6 +424,7 @@ module.exports = {
   criarMorador,
   atualizarStatusMorador,
   atualizarAceiteTCMorador,
+  atualizarUltimoAcesso,
   atualizarFotoMorador,
   buscarSessao,
   salvarSessao,

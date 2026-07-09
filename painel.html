@@ -344,6 +344,9 @@ th.sortable:hover{color:var(--text)}
         <button class="btn btn-secondary" onclick="abrirModalImport()">
           <i class="ti ti-file-spreadsheet"></i>Importar Excel
         </button>
+        <button class="btn btn-secondary" onclick="reenviarTCBatch()">
+          <i class="ti ti-send"></i>Reenviar T&C pendentes
+        </button>
       </div>
       <div class="pills" id="filtro-status">
         <button class="pill active" onclick="setFiltro('todos',this)">Todos</button>
@@ -945,6 +948,8 @@ function renderMoradoresTabela() {
         <th class="sortable" onclick="_sortClick('moradores','unidade',renderMoradoresTbody)">Unidade ${_sa('moradores','unidade')}</th>
         <th class="sortable" onclick="_sortClick('moradores','status',renderMoradoresTbody)">Status ${_sa('moradores','status')}</th>
         <th class="sortable" onclick="_sortClick('moradores','tc',renderMoradoresTbody)">T&C ${_sa('moradores','tc')}</th>
+        <th class="sortable" onclick="_sortClick('moradores','cadastro',renderMoradoresTbody)">Cadastro ${_sa('moradores','cadastro')}</th>
+        <th class="sortable" onclick="_sortClick('moradores','acesso',renderMoradoresTbody)">Último acesso ${_sa('moradores','acesso')}</th>
         <th>Ações</th>
       </tr>
       <tr class="filter-row">
@@ -961,6 +966,8 @@ function renderMoradoresTabela() {
           <option value="">Todos</option><option value="aceito">Aceito</option><option value="pendente">Pendente</option>
         </select></th>
         <th></th>
+        <th></th>
+        <th></th>
       </tr>
     </thead>
     <tbody id="moradores-tbody"></tbody>
@@ -973,6 +980,8 @@ function _morGetVal(m, col) {
   if (col==='unidade') return `${m.condominios?.nome||''} ${m.bloco} ${m.unidade}`
   if (col==='status') return m.status
   if (col==='tc') return m.aceite_tc ? 'aceito' : 'pendente'
+  if (col==='cadastro') return m.criado_em||''
+  if (col==='acesso') return m.ultimo_acesso||''
   return ''
 }
 function renderMoradoresTbody() {
@@ -997,7 +1006,10 @@ function renderMoradoresTbody() {
       <td><div>${m.condominios?.nome||'—'}</div>
         <div class="td-meta">${m.bloco} • Apto ${m.unidade}</div></td>
       <td><span class="badge badge-${m.status}">${statusLabel[m.status]||m.status}</span></td>
-      <td><span class="badge ${m.aceite_tc?'badge-approved':'badge-pending'}" style="font-size:10px">${m.aceite_tc?'Aceito':'Pendente'}</span></td>
+      <td><span class="badge ${m.aceite_tc?'badge-approved':'badge-pending'}" style="font-size:10px">${m.aceite_tc?'Aceito':'Pendente'}</span>
+        ${!m.aceite_tc?`<button class="btn btn-sm btn-secondary" onclick="reenviarTC('${m.id}')" title="Reenviar T&C" style="margin-left:4px;padding:2px 6px"><i class="ti ti-send" style="font-size:12px"></i></button>`:''}</td>
+      <td style="font-size:11px;color:var(--muted);white-space:nowrap">${fmtData(m.criado_em)}</td>
+      <td style="font-size:11px;color:var(--muted);white-space:nowrap">${m.ultimo_acesso?fmtData(m.ultimo_acesso):'—'}</td>
       <td><div class="td-actions">
         ${m.status!=='aprovado'?`<button class="btn btn-sm btn-success" onclick="aprovar('${m.id}','${m.nome}')" title="Aprovar"><i class="ti ti-check"></i></button>`:''}
         ${m.status!=='rejeitado'?`<button class="btn btn-sm btn-danger" onclick="rejeitar('${m.id}')" title="Rejeitar"><i class="ti ti-x"></i></button>`:''}
@@ -1005,10 +1017,10 @@ function renderMoradoresTbody() {
         <button class="btn btn-sm btn-secondary" onclick="abrirEditMorador(${JSON.stringify(m).replace(/"/g,'&quot;')})" title="Editar"><i class="ti ti-pencil"></i></button>
         <button class="btn btn-sm btn-danger" onclick="deletarMorador('${m.id}','${m.nome.replace(/'/g,"\\'")}')" title="Excluir"><i class="ti ti-trash"></i></button>
       </div></td>
-    </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:20px">Nenhum resultado</td></tr>'
+    </tr>`).join('') || '<tr><td colspan="9" style="text-align:center;color:var(--muted);padding:20px">Nenhum resultado</td></tr>'
   // Update sort arrows in header
   const ths = document.querySelectorAll('#moradores-lista thead tr:first-child th.sortable')
-  const cols = ['nome','celular','unidade','status','tc']
+  const cols = ['nome','celular','unidade','status','tc','cadastro','acesso']
   ths.forEach((th, i) => {
     const arrow = th.querySelector('.sort-arrow')
     if (arrow) arrow.outerHTML = _sa('moradores', cols[i])
@@ -1043,6 +1055,19 @@ async function bloquear(id) {
   await api(`/admin/moradores/${id}`, {method:'PATCH', body:JSON.stringify({status:'rejeitado'})})
   notif('Morador bloqueado.')
   carregarMoradores()
+}
+async function reenviarTC(id) {
+  try {
+    await api(`/admin/moradores/${id}/reenviar-tc`, {method:'POST'})
+    notif('T&C reenviado!')
+  } catch(e) { notif('Erro ao reenviar T&C.') }
+}
+async function reenviarTCBatch() {
+  if(!confirm('Reenviar T&C para todos os moradores com aceite pendente?')) return
+  try {
+    const r = await api('/admin/moradores/reenviar-tc-batch', {method:'POST'})
+    notif(`T&C reenviado para ${r.enviados} morador(es)${r.falhas?` (${r.falhas} falha(s))`:''}.`)
+  } catch(e) { notif('Erro ao reenviar T&C em batch.') }
 }
 
 // ── CADASTRO MANUAL ───────────────────────────────────────────────
