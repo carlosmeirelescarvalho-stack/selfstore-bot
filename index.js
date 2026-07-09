@@ -802,8 +802,9 @@ app.post('/admin/condominios/:id/idface-senha', async (req, res) => {
 
 app.post('/admin/condominios/:id/idface-admin', async (req, res) => {
   try {
-    const { cpf } = req.body
+    const { cpf, pin } = req.body
     if (!cpf) return res.status(400).json({ erro: 'CPF do administrador é obrigatório' })
+    if (pin && !/^\d{4,8}$/.test(pin)) return res.status(400).json({ erro: 'PIN deve ter entre 4 e 8 dígitos numéricos' })
 
     const supa = getDb()
     const { data: cond, error } = await supa.from('condominios').select('idface_ip, idface_senha, idface_user').eq('id', req.params.id).single()
@@ -814,7 +815,7 @@ app.post('/admin/condominios/:id/idface-admin', async (req, res) => {
     const userId = cpfParaInt(cpf)
     if (!userId) return res.status(400).json({ erro: 'CPF inválido' })
 
-    const resultado = await cadastrarAdminFisicoIDFace(cond.idface_ip, cond.idface_senha || 'admin', userId, cond.idface_user || 'admin')
+    const resultado = await cadastrarAdminFisicoIDFace(cond.idface_ip, cond.idface_senha || 'admin', userId, cond.idface_user || 'admin', pin || null)
     res.json(resultado)
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
@@ -931,6 +932,34 @@ function extrairButtonId(msg) {
   }
   return null
 }
+
+// ── CONVERSAS ──
+app.get('/admin/conversas', async (req, res) => {
+  try {
+    const contatos = await db.listarContatosRecentes(50)
+    const supa = getDb()
+    const celulares = contatos.map(c => c.celular)
+    const { data: moradores } = await supa.from('moradores').select('celular_whatsapp, nome, foto_url').in('celular_whatsapp', celulares)
+    const nomeMap = {}
+    for (const m of (moradores || [])) {
+      nomeMap[m.celular_whatsapp] = { nome: m.nome, foto: m.foto_url }
+    }
+    const result = contatos.map(c => ({
+      ...c,
+      nome: nomeMap[c.celular]?.nome || null,
+      foto: nomeMap[c.celular]?.foto || null
+    }))
+    res.json({ contatos: result })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+app.get('/admin/conversas/:celular', async (req, res) => {
+  try {
+    const limite = parseInt(req.query.limite) || 50
+    const msgs = await db.buscarMensagensPorCelular(req.params.celular, limite)
+    res.json({ mensagens: msgs })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
 
 // ─── START ────────────────────────────────────────────────────────
 app.listen(config.PORT, () => {
