@@ -240,12 +240,10 @@ th.sortable:hover{color:var(--text)}
     <div class="login-sub">SelfStore — acesso exclusivo</div>
     <div id="login-alert" class="alert"></div>
     <div class="form-group">
-      <label class="form-label">E-mail</label>
-      <input class="form-input" id="login-email" type="email" placeholder="admin@selfstore.com" autofocus>
-    </div>
-    <div class="form-group">
-      <label class="form-label">Senha</label>
-      <input class="form-input" id="login-senha" type="password" placeholder="Sua senha" onkeydown="if(event.key==='Enter')doLogin()">
+      <label class="form-label">Chave de acesso (API Key)</label>
+      <input class="form-input" id="login-apikey" type="password" placeholder="Cole a chave de acesso" autofocus
+        onkeydown="if(event.key==='Enter')doLogin()">
+      <div class="form-hint">Solicite a chave ao administrador do sistema</div>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="doLogin()">
       Entrar
@@ -374,6 +372,11 @@ th.sortable:hover{color:var(--text)}
 
     <!-- GELADEIRAS -->
     <div class="page" id="page-geladeiras">
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="abrirModalGelad()">
+          <i class="ti ti-plus"></i>Nova geladeira
+        </button>
+      </div>
       <div class="table-filter">
         <i class="ti ti-search"></i>
         <input type="text" placeholder="Filtrar geladeiras..." oninput="filtrarTabela(this.value,'geladeiras-lista')">
@@ -388,6 +391,11 @@ th.sortable:hover{color:var(--text)}
 
     <!-- CONDOMINIOS -->
     <div class="page" id="page-condominios">
+      <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="abrirModalCond()">
+          <i class="ti ti-plus"></i>Novo condomínio
+        </button>
+      </div>
       <div class="table-filter">
         <i class="ti ti-search"></i>
         <input type="text" placeholder="Filtrar condomínios..." oninput="filtrarTabela(this.value,'condominios-lista')">
@@ -595,6 +603,132 @@ th.sortable:hover{color:var(--text)}
   </div>
 </div>
 
+<!-- MODAL: CONDOMÍNIO -->
+<div class="modal-overlay" id="modal-cond">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-cond-title">Adicionar condomínio</div>
+      <button class="modal-close" onclick="fecharModal('modal-cond')"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="cond-edit-id">
+      <div class="form-group">
+        <label class="form-label">Nome</label>
+        <input class="form-input" id="cond-nome" type="text" placeholder="Nome do condomínio">
+      </div>
+      <div class="form-group">
+        <label class="form-label">iDFace IP</label>
+        <input class="form-input" id="cond-idface-ip" type="text" placeholder="Ex: 192.168.15.201">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">iDFace usuário</label>
+          <input class="form-input" id="cond-idface-user" type="text" placeholder="admin">
+        </div>
+        <div class="form-group">
+          <label class="form-label">iDFace senha</label>
+          <input class="form-input" id="cond-idface-senha" type="password" placeholder="••••••">
+        </div>
+      </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:8px;margin-top:4px">
+        <label class="toggle">
+          <input type="checkbox" id="cond-auto-aprov">
+          <span class="slider"></span>
+        </label>
+        <span style="font-size:12px">Aprovação automática</span>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="fecharModal('modal-cond')">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarCondominio()"><i class="ti ti-check"></i>Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: SEGURANÇA iDFACE -->
+<div class="modal-overlay" id="modal-idface-seg">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title"><i class="ti ti-shield-lock"></i> Segurança iDFace — <span id="idface-seg-cond-nome"></span></div>
+      <button class="modal-close" onclick="fecharModal('modal-idface-seg')"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="idface-seg-cond-id">
+      <div id="idface-seg-status" style="margin-bottom:12px"></div>
+
+      <div style="border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:12px">
+        <div style="font-weight:600;font-size:13px;margin-bottom:8px"><i class="ti ti-world"></i> Senha Web / API</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:8px">Protege o acesso remoto ao painel web e à API do iDFace. Padrão de fábrica: admin/admin.</p>
+        <div class="form-group" style="margin-bottom:6px">
+          <label class="form-label">Novo login</label>
+          <input class="form-input" id="idface-novo-login" type="text" placeholder="admin">
+        </div>
+        <div class="form-group" style="margin-bottom:6px">
+          <label class="form-label">Nova senha (mín. 8 caracteres)</label>
+          <input class="form-input" id="idface-nova-senha" type="password" placeholder="••••••••">
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="alterarSenhaIDFace()" id="btn-idface-senha"><i class="ti ti-key"></i>Alterar senha web</button>
+      </div>
+
+      <div style="border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:12px">
+        <div style="font-weight:600;font-size:13px;margin-bottom:8px"><i class="ti ti-fingerprint"></i> Admin físico (tela do equipamento)</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:8px">Cadastra um administrador no equipamento. Após isso, o menu na tela do iDFace só abre com autenticação (biometria/senha).</p>
+        <div class="form-group" style="margin-bottom:6px">
+          <label class="form-label">CPF do administrador</label>
+          <input class="form-input" id="idface-admin-cpf" type="text" placeholder="000.000.000-00">
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="cadastrarAdminIDFace()" id="btn-idface-admin"><i class="ti ti-user-shield"></i>Cadastrar admin físico</button>
+        <div id="idface-admins-lista" style="margin-top:8px;font-size:11px"></div>
+      </div>
+
+      <div style="border:1px solid var(--border);border-radius:8px;padding:12px">
+        <div style="font-weight:600;font-size:13px;margin-bottom:8px"><i class="ti ti-terminal"></i> SSH</div>
+        <p style="font-size:11px;color:var(--muted);margin-bottom:8px">Desativa o acesso SSH ao equipamento, reduzindo a superfície de ataque. Ativado por padrão de fábrica.</p>
+        <button class="btn btn-danger btn-sm" onclick="desativarSSHIDFace()" id="btn-idface-ssh"><i class="ti ti-lock"></i>Desativar SSH</button>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="fecharModal('modal-idface-seg')">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: GELADEIRA -->
+<div class="modal-overlay" id="modal-gelad">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modal-gelad-title">Adicionar geladeira</div>
+      <button class="modal-close" onclick="fecharModal('modal-gelad')"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="gelad-edit-id">
+      <div class="form-group">
+        <label class="form-label">Nome</label>
+        <input class="form-input" id="gelad-nome" type="text" placeholder="Ex: Geladeira Lobby">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Condomínio</label>
+        <select class="form-input" id="gelad-cond" style="appearance:auto"></select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">ESP32 IP</label>
+        <input class="form-input" id="gelad-esp32" type="text" placeholder="Ex: 192.168.15.100">
+      </div>
+      <div class="form-group" style="display:flex;align-items:center;gap:8px;margin-top:4px">
+        <label class="toggle">
+          <input type="checkbox" id="gelad-flag18">
+          <span class="slider"></span>
+        </label>
+        <span style="font-size:12px">Flag +18 (bebidas alcoólicas)</span>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="fecharModal('modal-gelad')">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarGeladeira()"><i class="ti ti-check"></i>Salvar</button>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL: FOTO ZOOM -->
 <div class="modal-overlay" id="modal-foto" onclick="fecharModal('modal-foto')">
   <div style="max-width:90vw;max-height:90vh;display:flex;align-items:center;justify-content:center">
@@ -624,31 +758,44 @@ th.sortable:hover{color:var(--text)}
 const API = window.location.origin
 
 // ── AUTH ──────────────────────────────────────────────────────────
-const ADMIN_EMAIL = 'admin@selfstore.com'
-const ADMIN_SENHA = 'selfstore2025'
+let _apiKey = localStorage.getItem('selfstore_api_key') || ''
 
 let filtroAtual = 'todos'
 let importFile = null
 let condominiosCache = []
 
-function doLogin() {
-  const email = document.getElementById('login-email').value.trim()
-  const senha = document.getElementById('login-senha').value
+async function doLogin() {
+  const key = document.getElementById('login-apikey').value.trim()
   const a = document.getElementById('login-alert')
-  if(email !== ADMIN_EMAIL || senha !== ADMIN_SENHA) {
-    a.className = 'alert alert-error show'
-    a.textContent = 'E-mail ou senha incorretos.'
-    return
+  if(!key) { a.className = 'alert alert-error show'; a.textContent = 'Informe a chave de acesso.'; return }
+  _apiKey = key
+  try {
+    const res = await fetch(API + '/admin/stats', { headers: { 'Authorization': 'Bearer ' + _apiKey } })
+    if(res.status === 401 || res.status === 403) {
+      a.className = 'alert alert-error show'; a.textContent = 'Chave de acesso inválida.'; _apiKey = ''; return
+    }
+    if(res.status === 500) {
+      const body = await res.json().catch(()=>({}))
+      a.className = 'alert alert-error show'; a.textContent = body.erro || 'Erro no servidor.'; _apiKey = ''; return
+    }
+  } catch(e) {
+    a.className = 'alert alert-error show'; a.textContent = 'Não foi possível conectar ao servidor.'; _apiKey = ''; return
   }
+  localStorage.setItem('selfstore_api_key', _apiKey)
   document.getElementById('login-screen').style.display = 'none'
   document.getElementById('app').style.display = 'flex'
   init()
 }
 
 function logout() {
+  _apiKey = ''
+  localStorage.removeItem('selfstore_api_key')
   document.getElementById('login-screen').style.display = 'flex'
   document.getElementById('app').style.display = 'none'
 }
+
+// Auto-login se key salva
+if(_apiKey) { doLogin() }
 
 // ── INIT ──────────────────────────────────────────────────────────
 async function init() {
@@ -676,9 +823,9 @@ function nav(page, el) {
 
 // ── FETCH HELPER ──────────────────────────────────────────────────
 async function api(path, opts={}) {
-  const res = await fetch(API + path, {
-    headers:{'Content-Type':'application/json'}, ...opts
-  })
+  const headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _apiKey, ...(opts.headers||{}) }
+  const res = await fetch(API + path, { ...opts, headers })
+  if(res.status === 401) { logout(); throw new Error('Sessão expirada') }
   return res.json()
 }
 
@@ -941,7 +1088,7 @@ async function handleFile(file) {
   const fd = new FormData()
   fd.append('planilha', file)
   fd.append('condominio_id', document.getElementById('import-cond').value)
-  const res = await fetch(API+'/admin/importar/preview', {method:'POST', body:fd}).then(r=>r.json())
+  const res = await fetch(API+'/admin/importar/preview', {method:'POST', body:fd, headers:{'Authorization':'Bearer '+_apiKey}}).then(r=>r.json())
   document.getElementById('import-step-1').style.display='none'
   document.getElementById('import-step-2').style.display='block'
   const a = document.getElementById('import-alert')
@@ -960,7 +1107,7 @@ async function confirmarImport() {
   const fd = new FormData()
   fd.append('planilha', importFile)
   fd.append('condominio_id', document.getElementById('import-cond').value)
-  const res = await fetch(API+'/admin/importar/confirmar', {method:'POST', body:fd}).then(r=>r.json())
+  const res = await fetch(API+'/admin/importar/confirmar', {method:'POST', body:fd, headers:{'Authorization':'Bearer '+_apiKey}}).then(r=>r.json())
   fecharModal('modal-import')
   notif(`${res.importados} moradores importados!`)
   carregarMoradores()
@@ -1038,6 +1185,7 @@ async function carregarGeladeiras() {
   if(!geladeiras||geladeiras.length===0) {
     el.innerHTML='<div class="empty"><i class="ti ti-snowflake"></i><p>Nenhuma geladeira</p></div>'; return
   }
+  geladeirasCache = geladeiras
   el.innerHTML = geladeiras.map(g=>`
     <div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--border)">
       <div style="width:36px;height:36px;border-radius:8px;background:var(--accent-l);
@@ -1063,6 +1211,7 @@ async function carregarGeladeiras() {
       <span style="width:8px;height:8px;border-radius:50%;background:${g.esp32_ip?'var(--accent)':'var(--border)'}"></span>
     </div>`).join('')
 }
+let geladeirasCache = []
 async function toggleFlag18(id, val) {
   await api(`/admin/geladeiras/${id}`, {method:'PATCH', body:JSON.stringify({flag_alcoolica:val})})
   const label = document.getElementById('flag18-label-'+id)
@@ -1094,6 +1243,9 @@ async function carregarCondominios2() {
       <button class="btn btn-sm btn-secondary" onclick="abrirQR('/qr/cadastro/${c.id}','QR Cadastro — ${c.nome}','qr-cadastro-${c.nome.replace(/\\s+/g,'-').toLowerCase()}.png')">
         <i class="ti ti-qrcode"></i>QR Cadastro
       </button>
+      ${c.idface_ip ? `<button class="btn btn-sm btn-secondary" onclick="abrirSegurancaIDFace('${c.id}','${(c.nome||'').replace(/'/g,"\\'")}')">
+        <i class="ti ti-shield-lock"></i>Segurança iDFace
+      </button>` : ''}
       <div style="display:flex;align-items:center;gap:8px">
         <span id="auto-label-${c.id}" style="font-size:11px;color:${c.flag_auto_aprovacao?'var(--success)':'var(--muted)'};white-space:nowrap">
           Aprovação automática: <strong>${c.flag_auto_aprovacao?'Ativo':'Inativo'}</strong>
@@ -1103,6 +1255,8 @@ async function carregarCondominios2() {
           <span class="slider"></span>
         </label>
       </div>
+      <button class="btn btn-sm btn-secondary" onclick="abrirEditCond('${c.id}')" title="Editar"><i class="ti ti-pencil"></i></button>
+      <button class="btn btn-sm btn-danger" onclick="removerCondominio('${c.id}','${(c.nome||'').replace(/'/g,"\\'")}')" title="Remover"><i class="ti ti-trash"></i></button>
     </div>`).join('')
 }
 async function verBlocos(condId, condNome) {
@@ -1114,10 +1268,13 @@ async function verBlocos(condId, condNome) {
   if(!blocos||blocos.length===0) {
     el.innerHTML='<div class="empty" style="padding:16px"><i class="ti ti-building"></i><p>Nenhum bloco cadastrado</p></div>'; return
   }
-  el.innerHTML = blocos.map(b=>`
+  blocosCache = blocos
+  el.innerHTML = blocos.map((b,i)=>`
     <div id="bloco-row-${b.id}" style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
       <span id="bloco-nome-${b.id}" style="font-size:13px;flex:1">${b.nome}</span>
       <div style="display:flex;gap:4px">
+        <button class="btn btn-sm btn-secondary" onclick="moverBloco(${i},-1)" title="Subir" ${i===0?'disabled style="opacity:.3"':''}><i class="ti ti-arrow-up"></i></button>
+        <button class="btn btn-sm btn-secondary" onclick="moverBloco(${i},1)" title="Descer" ${i===blocos.length-1?'disabled style="opacity:.3"':''}><i class="ti ti-arrow-down"></i></button>
         <button class="btn btn-sm btn-secondary" onclick="editarBloco('${b.id}','${b.nome.replace(/'/g,"\\'")}')" title="Editar"><i class="ti ti-pencil"></i></button>
         <button class="btn btn-sm btn-danger" onclick="removerBloco('${b.id}')" title="Remover"><i class="ti ti-trash"></i></button>
       </div>
@@ -1160,6 +1317,201 @@ async function removerBloco(id) {
   notif('Bloco removido.')
   verBlocos(blocoCondId, document.getElementById('blocos-title').textContent.replace('Blocos — ',''))
 }
+let blocosCache = []
+async function moverBloco(idx, dir) {
+  const arr = [...blocosCache]
+  const j = idx + dir
+  if (j < 0 || j >= arr.length) return
+  ;[arr[idx], arr[j]] = [arr[j], arr[idx]]
+  const ids = arr.map(b => b.id)
+  await api('/admin/blocos/reordenar', {method:'PATCH', body:JSON.stringify({ids})})
+  verBlocos(blocoCondId, document.getElementById('blocos-title').textContent.replace('Blocos — ',''))
+}
+
+// ── CRUD CONDOMÍNIOS ─────────────────────────────────────────────
+function abrirModalCond() {
+  document.getElementById('cond-edit-id').value = ''
+  document.getElementById('cond-nome').value = ''
+  document.getElementById('cond-idface-ip').value = ''
+  document.getElementById('cond-idface-user').value = ''
+  document.getElementById('cond-idface-senha').value = ''
+  document.getElementById('cond-auto-aprov').checked = false
+  document.getElementById('modal-cond-title').textContent = 'Adicionar condomínio'
+  document.getElementById('modal-cond').classList.add('open')
+}
+function abrirEditCond(id) {
+  const c = condominiosCache.find(x=>x.id===id)
+  if(!c) return
+  document.getElementById('cond-edit-id').value = c.id
+  document.getElementById('cond-nome').value = c.nome || ''
+  document.getElementById('cond-idface-ip').value = c.idface_ip || ''
+  document.getElementById('cond-idface-user').value = c.idface_user || ''
+  document.getElementById('cond-idface-senha').value = c.idface_senha || ''
+  document.getElementById('cond-auto-aprov').checked = !!c.flag_auto_aprovacao
+  document.getElementById('modal-cond-title').textContent = 'Editar condomínio'
+  document.getElementById('modal-cond').classList.add('open')
+}
+async function salvarCondominio() {
+  const editId = document.getElementById('cond-edit-id').value
+  const nome = document.getElementById('cond-nome').value.trim()
+  if(!nome) { alert('Informe o nome'); return }
+  const body = {
+    nome,
+    idface_ip: document.getElementById('cond-idface-ip').value.trim() || null,
+    idface_user: document.getElementById('cond-idface-user').value.trim() || null,
+    idface_senha: document.getElementById('cond-idface-senha').value.trim() || null,
+    flag_auto_aprovacao: document.getElementById('cond-auto-aprov').checked
+  }
+  if(editId) {
+    await api(`/admin/condominios/${editId}`, {method:'PATCH', body:JSON.stringify(body)})
+    notif('Condomínio atualizado!')
+  } else {
+    await api('/admin/condominios', {method:'POST', body:JSON.stringify(body)})
+    notif('Condomínio adicionado!')
+  }
+  fecharModal('modal-cond')
+  await carregarCondominios(); carregarCondominios2()
+}
+async function removerCondominio(id, nome) {
+  if(!confirm(`Remover condomínio "${nome}"? Isso pode afetar moradores e geladeiras vinculados.`)) return
+  await api(`/admin/condominios/${id}`, {method:'DELETE'})
+  notif('Condomínio removido.')
+  await carregarCondominios(); carregarCondominios2()
+}
+
+// ── SEGURANÇA iDFACE ────────────────────────────────────────────
+async function abrirSegurancaIDFace(condId, condNome) {
+  document.getElementById('idface-seg-cond-id').value = condId
+  document.getElementById('idface-seg-cond-nome').textContent = condNome
+  document.getElementById('idface-seg-status').innerHTML = ''
+  document.getElementById('idface-novo-login').value = ''
+  document.getElementById('idface-nova-senha').value = ''
+  document.getElementById('idface-admin-cpf').value = ''
+  document.getElementById('modal-idface-seg').classList.add('open')
+  await carregarAdminsIDFace(condId)
+}
+
+function idfaceStatus(msg, tipo) {
+  const el = document.getElementById('idface-seg-status')
+  const cor = tipo === 'ok' ? 'var(--success)' : tipo === 'erro' ? 'var(--danger)' : 'var(--muted)'
+  el.innerHTML = `<div style="padding:8px 12px;border-radius:6px;font-size:12px;background:${cor}15;color:${cor};border:1px solid ${cor}30">${msg}</div>`
+}
+
+async function alterarSenhaIDFace() {
+  const condId = document.getElementById('idface-seg-cond-id').value
+  const novaSenha = document.getElementById('idface-nova-senha').value
+  const novoLogin = document.getElementById('idface-novo-login').value.trim() || 'admin'
+  if (!novaSenha || novaSenha.length < 8) { idfaceStatus('Senha deve ter no mínimo 8 caracteres.', 'erro'); return }
+  const btn = document.getElementById('btn-idface-senha')
+  btn.disabled = true; btn.textContent = 'Alterando...'
+  try {
+    const res = await api(`/admin/condominios/${condId}/idface-senha`, {
+      method: 'POST', body: JSON.stringify({ novo_login: novoLogin, nova_senha: novaSenha })
+    })
+    idfaceStatus(`✅ ${res.mensagem}`, 'ok')
+    await carregarCondominios()
+  } catch (e) { idfaceStatus(`❌ ${e.message || 'Erro ao alterar senha'}`, 'erro') }
+  finally { btn.disabled = false; btn.innerHTML = '<i class="ti ti-key"></i>Alterar senha web' }
+}
+
+async function cadastrarAdminIDFace() {
+  const condId = document.getElementById('idface-seg-cond-id').value
+  const cpf = document.getElementById('idface-admin-cpf').value.replace(/\D/g, '')
+  if (!cpf || cpf.length < 11) { idfaceStatus('Informe um CPF válido (11 dígitos).', 'erro'); return }
+  const btn = document.getElementById('btn-idface-admin')
+  btn.disabled = true; btn.textContent = 'Cadastrando...'
+  try {
+    const res = await api(`/admin/condominios/${condId}/idface-admin`, {
+      method: 'POST', body: JSON.stringify({ cpf })
+    })
+    idfaceStatus(`✅ ${res.mensagem}`, 'ok')
+    await carregarAdminsIDFace(condId)
+  } catch (e) { idfaceStatus(`❌ ${e.message || 'Erro ao cadastrar admin'}`, 'erro') }
+  finally { btn.disabled = false; btn.innerHTML = '<i class="ti ti-user-shield"></i>Cadastrar admin físico' }
+}
+
+async function desativarSSHIDFace() {
+  const condId = document.getElementById('idface-seg-cond-id').value
+  if (!confirm('Desativar SSH no iDFace? Isso impede acesso remoto ao terminal do equipamento.')) return
+  const btn = document.getElementById('btn-idface-ssh')
+  btn.disabled = true; btn.textContent = 'Desativando...'
+  try {
+    const res = await api(`/admin/condominios/${condId}/idface-ssh`, { method: 'POST' })
+    idfaceStatus(`✅ ${res.mensagem}`, 'ok')
+  } catch (e) { idfaceStatus(`❌ ${e.message || 'Erro ao desativar SSH'}`, 'erro') }
+  finally { btn.disabled = false; btn.innerHTML = '<i class="ti ti-lock"></i>Desativar SSH' }
+}
+
+async function carregarAdminsIDFace(condId) {
+  const el = document.getElementById('idface-admins-lista')
+  el.innerHTML = '<span style="color:var(--muted)">Carregando admins...</span>'
+  try {
+    const res = await api(`/admin/condominios/${condId}/idface-admins`)
+    if (!res.admins || res.admins.length === 0) {
+      el.innerHTML = '<span style="color:var(--danger)">⚠️ Nenhum admin físico cadastrado — menu do equipamento está aberto para qualquer pessoa.</span>'
+    } else {
+      el.innerHTML = `<span style="color:var(--success)">🔒 ${res.admins.length} admin(s) cadastrado(s) — menu do equipamento protegido.</span>`
+    }
+  } catch (e) {
+    el.innerHTML = `<span style="color:var(--danger)">Erro ao consultar: ${e.message || 'iDFace inacessível'}</span>`
+  }
+}
+
+// ── CRUD GELADEIRAS ──────────────────────────────────────────────
+function abrirModalGelad() {
+  document.getElementById('gelad-edit-id').value = ''
+  document.getElementById('gelad-nome').value = ''
+  document.getElementById('gelad-esp32').value = ''
+  document.getElementById('gelad-flag18').checked = false
+  document.getElementById('modal-gelad-title').textContent = 'Adicionar geladeira'
+  _preencherSelectCond('gelad-cond', '')
+  document.getElementById('modal-gelad').classList.add('open')
+}
+function abrirEditGelad(id) {
+  const g = geladeirasCache.find(x=>x.id===id)
+  if(!g) return
+  document.getElementById('gelad-edit-id').value = g.id
+  document.getElementById('gelad-nome').value = g.nome || ''
+  document.getElementById('gelad-esp32').value = g.esp32_ip || ''
+  document.getElementById('gelad-flag18').checked = !!g.flag_alcoolica
+  document.getElementById('modal-gelad-title').textContent = 'Editar geladeira'
+  _preencherSelectCond('gelad-cond', g.condominio_id)
+  document.getElementById('modal-gelad').classList.add('open')
+}
+function _preencherSelectCond(selectId, selectedId) {
+  document.getElementById(selectId).innerHTML = condominiosCache.map(c =>
+    `<option value="${c.id}" ${c.id===selectedId?'selected':''}>${c.nome}</option>`
+  ).join('')
+}
+async function salvarGeladeira() {
+  const editId = document.getElementById('gelad-edit-id').value
+  const nome = document.getElementById('gelad-nome').value.trim()
+  const condominio_id = document.getElementById('gelad-cond').value
+  if(!nome) { alert('Informe o nome'); return }
+  if(!condominio_id) { alert('Selecione o condomínio'); return }
+  const body = {
+    nome,
+    condominio_id,
+    esp32_ip: document.getElementById('gelad-esp32').value.trim() || null,
+    flag_alcoolica: document.getElementById('gelad-flag18').checked
+  }
+  if(editId) {
+    await api(`/admin/geladeiras/${editId}`, {method:'PATCH', body:JSON.stringify(body)})
+    notif('Geladeira atualizada!')
+  } else {
+    await api('/admin/geladeiras', {method:'POST', body:JSON.stringify(body)})
+    notif('Geladeira adicionada!')
+  }
+  fecharModal('modal-gelad')
+  carregarGeladeiras()
+}
+async function removerGeladeira(id, nome) {
+  if(!confirm(`Remover geladeira "${nome}"?`)) return
+  await api(`/admin/geladeiras/${id}`, {method:'DELETE'})
+  notif('Geladeira removida.')
+  carregarGeladeiras()
+}
+
 async function toggleAutoAprov(id, val) {
   await api(`/admin/condominios/${id}`, {method:'PATCH', body:JSON.stringify({flag_auto_aprovacao:val})})
   const label = document.getElementById('auto-label-'+id)

@@ -20,10 +20,23 @@ app.use(express.json({ limit: '20mb' }))
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*')
   res.header('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS')
-  res.header('Access-Control-Allow-Headers', 'Content-Type,X-ESP32-Secret')
+  res.header('Access-Control-Allow-Headers', 'Content-Type,X-ESP32-Secret,Authorization')
   if (req.method === 'OPTIONS') return res.sendStatus(200)
   next()
 })
+
+// ─── AUTH MIDDLEWARE — protege /admin/* ───────────────────────────
+function autenticarAdmin(req, res, next) {
+  if (!config.ADMIN_API_KEY) {
+    return res.status(500).json({ erro: 'ADMIN_API_KEY não configurada no servidor.' })
+  }
+  const auth = req.headers.authorization
+  if (!auth || !auth.startsWith('Bearer ') || auth.slice(7) !== config.ADMIN_API_KEY) {
+    return res.status(401).json({ erro: 'Não autorizado. API key inválida ou ausente.' })
+  }
+  next()
+}
+app.use('/admin', autenticarAdmin)
 
 // ─── CRON — limpeza de sessões abandonadas (8h São Paulo) ─────────
 cron.schedule('0 8 * * *', async () => {
@@ -587,6 +600,19 @@ app.get('/admin/blocos/:condominioId', async (req, res) => {
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
+app.patch('/admin/blocos/reordenar', async (req, res) => {
+  try {
+    const supa = getDb()
+    const { ids } = req.body
+    if (!ids || !Array.isArray(ids)) return res.status(400).json({ erro: 'ids é obrigatório' })
+    for (let i = 0; i < ids.length; i++) {
+      const { error } = await supa.from('blocos').update({ ordem: i }).eq('id', ids[i])
+      if (error) throw error
+    }
+    res.json({ ok: true })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
 app.post('/admin/blocos', async (req, res) => {
   try {
     const { condominio_id, nome } = req.body
@@ -616,12 +642,119 @@ app.delete('/admin/blocos/:id', async (req, res) => {
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
+app.post('/admin/condominios', async (req, res) => {
+  try {
+    const supa = getDb()
+    const { nome, flag_auto_aprovacao, idface_ip, idface_user, idface_senha } = req.body
+    if (!nome) return res.status(400).json({ erro: 'Nome é obrigatório' })
+    const { data, error } = await supa.from('condominios').insert([{ nome, flag_auto_aprovacao: !!flag_auto_aprovacao, idface_ip: idface_ip||null, idface_user: idface_user||null, idface_senha: idface_senha||null }]).select().single()
+    if (error) throw error
+    res.json({ condominio: data })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
 app.patch('/admin/condominios/:id', async (req, res) => {
   try {
     const supa = getDb()
     const { data, error } = await supa.from('condominios').update(req.body).eq('id', req.params.id).select().single()
     if (error) throw error
     res.json({ condominio: data })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+app.delete('/admin/condominios/:id', async (req, res) => {
+  try {
+    const supa = getDb()
+    const { error } = await supa.from('condominios').delete().eq('id', req.params.id)
+    if (error) throw error
+    res.json({ ok: true })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+// ── GELADEIRAS CRUD ──
+app.post('/admin/geladeiras', async (req, res) => {
+  try {
+    const supa = getDb()
+    const { nome, condominio_id, esp32_ip, flag_alcoolica } = req.body
+    if (!nome || !condominio_id) return res.status(400).json({ erro: 'Nome e condomínio são obrigatórios' })
+    const { data, error } = await supa.from('geladeiras').insert([{ nome, condominio_id, esp32_ip: esp32_ip||null, flag_alcoolica: !!flag_alcoolica }]).select('*, condominios(nome)').single()
+    if (error) throw error
+    res.json({ geladeira: data })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+app.delete('/admin/geladeiras/:id', async (req, res) => {
+  try {
+    const supa = getDb()
+    const { error } = await supa.from('geladeiras').delete().eq('id', req.params.id)
+    if (error) throw error
+    res.json({ ok: true })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+// ── SEGURANÇA iDFACE ────────────────────────────────────────────
+
+app.post('/admin/condominios/:id/idface-senha', async (req, res) => {
+  try {
+    const { novo_login, nova_senha } = req.body
+    if (!nova_senha || nova_senha.length < 8) return res.status(400).json({ erro: 'Senha deve ter no mínimo 8 caracteres' })
+
+    const supa = getDb()
+    const { data: cond, error } = await supa.from('condominios').select('idface_ip, idface_senha, idface_user').eq('id', req.params.id).single()
+    if (error || !cond) return res.status(404).json({ erro: 'Condomínio não encontrado' })
+    if (!cond.idface_ip) return res.status(400).json({ erro: 'iDFace não configurado neste condomínio' })
+
+    const { alterarSenhaWebIDFace } = require('./idface')
+    const login = novo_login || cond.idface_user || 'admin'
+    await alterarSenhaWebIDFace(cond.idface_ip, cond.idface_senha || 'admin', login, nova_senha, cond.idface_user || 'admin')
+
+    await supa.from('condominios').update({ idface_senha: nova_senha, idface_user: login }).eq('id', req.params.id)
+    res.json({ ok: true, mensagem: 'Senha web do iDFace alterada e salva no banco' })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+app.post('/admin/condominios/:id/idface-admin', async (req, res) => {
+  try {
+    const { cpf } = req.body
+    if (!cpf) return res.status(400).json({ erro: 'CPF do administrador é obrigatório' })
+
+    const supa = getDb()
+    const { data: cond, error } = await supa.from('condominios').select('idface_ip, idface_senha, idface_user').eq('id', req.params.id).single()
+    if (error || !cond) return res.status(404).json({ erro: 'Condomínio não encontrado' })
+    if (!cond.idface_ip) return res.status(400).json({ erro: 'iDFace não configurado neste condomínio' })
+
+    const { cadastrarAdminFisicoIDFace, cpfParaInt } = require('./idface')
+    const userId = cpfParaInt(cpf)
+    if (!userId) return res.status(400).json({ erro: 'CPF inválido' })
+
+    const resultado = await cadastrarAdminFisicoIDFace(cond.idface_ip, cond.idface_senha || 'admin', userId, cond.idface_user || 'admin')
+    res.json(resultado)
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+app.post('/admin/condominios/:id/idface-ssh', async (req, res) => {
+  try {
+    const supa = getDb()
+    const { data: cond, error } = await supa.from('condominios').select('idface_ip, idface_senha, idface_user').eq('id', req.params.id).single()
+    if (error || !cond) return res.status(404).json({ erro: 'Condomínio não encontrado' })
+    if (!cond.idface_ip) return res.status(400).json({ erro: 'iDFace não configurado neste condomínio' })
+
+    const { desativarSSHIDFace } = require('./idface')
+    await desativarSSHIDFace(cond.idface_ip, cond.idface_senha || 'admin', cond.idface_user || 'admin')
+    res.json({ ok: true, mensagem: 'SSH desativado no iDFace' })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+app.get('/admin/condominios/:id/idface-admins', async (req, res) => {
+  try {
+    const supa = getDb()
+    const { data: cond, error } = await supa.from('condominios').select('idface_ip, idface_senha, idface_user').eq('id', req.params.id).single()
+    if (error || !cond) return res.status(404).json({ erro: 'Condomínio não encontrado' })
+    if (!cond.idface_ip) return res.status(400).json({ erro: 'iDFace não configurado neste condomínio' })
+
+    const { listarAdminsIDFace } = require('./idface')
+    const admins = await listarAdminsIDFace(cond.idface_ip, cond.idface_senha || 'admin', cond.idface_user || 'admin')
+    res.json({ admins })
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 

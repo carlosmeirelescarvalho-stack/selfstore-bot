@@ -176,6 +176,78 @@ async function abrirPortaIDFace(ip, senha, usuario = 'admin') {
   return true
 }
 
+// ─── ALTERAR SENHA WEB ───────────────────────────────────────────
+// POST /change_login.fcgi — troca usuário/senha de acesso web e API
+async function alterarSenhaWebIDFace(ip, senhaAtual, novoLogin, novaSenha, usuario = 'admin') {
+  const base = getBaseUrl(ip)
+  const session = await loginIDFace(ip, senhaAtual, usuario)
+  const res = await fetch(`${base}/change_login.fcgi?session=${session}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ login: novoLogin, password: novaSenha }),
+  })
+  if (!res.ok) throw new Error(`iDFace alterar senha falhou: ${res.status}`)
+  return true
+}
+
+// ─── CADASTRAR ADMIN FÍSICO ──────────────────────────────────────
+// Cria user_role com role=1 para exigir autenticação no menu do equipamento
+async function cadastrarAdminFisicoIDFace(ip, senha, userId, usuario = 'admin') {
+  const base = getBaseUrl(ip)
+  const session = await loginIDFace(ip, senha, usuario)
+
+  const resCheck = await fetch(`${base}/load_objects.fcgi?session=${session}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      object: 'user_roles',
+      where: [{ object: 'user_roles', field: 'user_id', operator: '=', value: userId }]
+    }),
+  })
+  const checkData = await resCheck.json()
+  if (checkData?.user_roles?.length > 0) {
+    return { criado: false, mensagem: 'Usuário já é admin no equipamento' }
+  }
+
+  const res = await fetch(`${base}/create_objects.fcgi?session=${session}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      object: 'user_roles',
+      values: [{ user_id: userId, role: 1 }],
+    }),
+  })
+  if (!res.ok) throw new Error(`iDFace cadastrar admin falhou: ${res.status}`)
+  return { criado: true, mensagem: 'Admin cadastrado — menu do equipamento agora exige autenticação' }
+}
+
+// ─── DESATIVAR SSH ───────────────────────────────────────────────
+async function desativarSSHIDFace(ip, senha, usuario = 'admin') {
+  const base = getBaseUrl(ip)
+  const session = await loginIDFace(ip, senha, usuario)
+  const res = await fetch(`${base}/set_configuration.fcgi?session=${session}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ general: { ssh_enabled: '0' } }),
+  })
+  if (!res.ok) throw new Error(`iDFace desativar SSH falhou: ${res.status}`)
+  return true
+}
+
+// ─── LISTAR ADMINS DO EQUIPAMENTO ────────────────────────────────
+async function listarAdminsIDFace(ip, senha, usuario = 'admin') {
+  const base = getBaseUrl(ip)
+  const session = await loginIDFace(ip, senha, usuario)
+  const res = await fetch(`${base}/load_objects.fcgi?session=${session}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ object: 'user_roles' }),
+  })
+  if (!res.ok) throw new Error(`iDFace listar admins falhou: ${res.status}`)
+  const data = await res.json()
+  return data?.user_roles || []
+}
+
 // ─── URL PARA BASE64 ─────────────────────────────────────────────
 async function urlParaBase64(url) {
   const res = await fetch(url)
@@ -189,4 +261,9 @@ module.exports = {
   removerUsuarioIDFace,
   abrirPortaIDFace,
   urlParaBase64,
+  alterarSenhaWebIDFace,
+  cadastrarAdminFisicoIDFace,
+  desativarSSHIDFace,
+  listarAdminsIDFace,
+  cpfParaInt,
 }

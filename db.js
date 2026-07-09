@@ -162,8 +162,9 @@ async function listarCondominios() {
 async function listarBlocosPorCondominio(condominioId) {
   const { data, error } = await supabase()
     .from('blocos')
-    .select('id, nome')
+    .select('id, nome, ordem')
     .eq('condominio_id', condominioId)
+    .order('ordem', { nullsFirst: false })
     .order('nome')
   if (error) {
     // Se tabela nao existe ainda, retorna vazio
