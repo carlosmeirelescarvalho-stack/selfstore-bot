@@ -304,9 +304,13 @@ async function sincronizarComIDFace(morador, fotoBase64, condominio) {
     if (!condominio?.idface_ip || !condominio?.idface_senha) return false
     if (!fotoBase64) return false
     const { cadastrarRostoIDFace } = require('./idface')
-    await cadastrarRostoIDFace(
-      condominio.idface_ip, condominio.idface_senha,
-      morador, fotoBase64, condominio.idface_user || 'admin'
+    const { comRetry } = require('./retry')
+    await comRetry(
+      () => cadastrarRostoIDFace(
+        condominio.idface_ip, condominio.idface_senha,
+        morador, fotoBase64, condominio.idface_user || 'admin'
+      ),
+      { label: `iDFace sync(${morador.id})` }
     )
     console.log(`iDFace: rosto cadastrado para morador ${morador.id}`)
     return true
