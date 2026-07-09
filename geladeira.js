@@ -126,6 +126,7 @@ async function handleGeladeira(celular, mensagem, buttonId) {
     // 3.10 — Confirma
     await enviarTexto(celular, MSG.geladeiraAberta(geladeira.nome))
     await db.registrarLog(morador.id, geladeira.id, 'whatsapp', 'aberto', null)
+    db.atualizarUltimoAcesso(morador.id)
 
   } catch (err) {
     console.error('Erro em handleGeladeira:', err)

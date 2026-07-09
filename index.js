@@ -350,12 +350,30 @@ async function handleAtendimentoMotivo(celular, texto) {
   await db.deletarSessao(celular)
 
   const hora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+  let transcriptBloco = ''
+  try {
+    const msgs = await db.buscarMensagensPorCelular(celular, 15)
+    if (msgs.length) {
+      const linhas = msgs.map(m => {
+        const dt = new Date(m.criado_em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' })
+        const icon = m.direcao === 'recebida' ? '👤' : '🤖'
+        const conteudo = (m.conteudo || '').substring(0, 200)
+        return `[${dt}] ${icon} ${conteudo}`
+      })
+      transcriptBloco = `\n\n📋 *Histórico recente:*\n${linhas.join('\n')}`
+      if (transcriptBloco.length > 3000) {
+        transcriptBloco = transcriptBloco.substring(0, 3000) + '\n…(truncado)'
+      }
+    }
+  } catch (e) { console.error('Erro ao buscar transcript:', e.message) }
+
   await notificarAdmin(
     `📲 *Solicitação de atendimento*\n\n` +
     `Nome: ${dados.nome_atendimento || 'N/A'}\n` +
     `Celular: ${celular}\n` +
     `Motivo: ${texto}\n` +
-    `Horário: ${hora}`
+    `Horário: ${hora}` +
+    transcriptBloco
   )
   await enviarTexto(celular, '✅ Seus dados foram encaminhados para nosso time de suporte. Em breve entrarão em contato!')
 }
@@ -371,6 +389,10 @@ app.post('/webhook/idface', async (req, res) => {
       negado ? 'negado' : 'aberto',
       negado ? evento.result : null)
 
+    if (!negado) {
+      const mor = await db.buscarMoradorPorCpfNumerico(evento.user_id)
+      if (mor) db.atualizarUltimoAcesso(mor.id)
+    }
     if (negado) {
       const morador = await db.buscarMoradorPorCpfNumerico(evento.user_id)
       if (morador && morador.status === 'bloqueado' && podeAlertarBloqueio(morador.id)) {
@@ -468,6 +490,50 @@ app.delete('/admin/moradores/:id', async (req, res) => {
     }
     await db.deletarMorador(req.params.id)
     res.json({ ok: true })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+app.post('/admin/moradores/:id/reenviar-tc', async (req, res) => {
+  try {
+    const supa = getDb()
+    const { data: m, error } = await supa.from('moradores').select('*, condominios(nome)').eq('id', req.params.id).single()
+    if (error) throw error
+    if (m.aceite_tc) return res.status(400).json({ erro: 'Morador já aceitou os T&C' })
+    await enviarBotoes(m.celular_whatsapp,
+      MSG.moradorTCNotificacao(m.nome, m.condominios?.nome || '', config.LINK_TC),
+      [
+        { id: 'tc_morador_aceito', titulo: 'Li e estou de acordo' },
+        { id: 'tc_morador_recusado', titulo: 'Não concordo' },
+      ]
+    )
+    await db.salvarSessao(m.celular_whatsapp, 'morador_tc', {})
+    res.json({ ok: true })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
+app.post('/admin/moradores/reenviar-tc-batch', async (req, res) => {
+  try {
+    const supa = getDb()
+    const { data: pendentes, error } = await supa.from('moradores').select('*, condominios(nome)').eq('aceite_tc', false)
+    if (error) throw error
+    let enviados = 0, falhas = 0
+    for (const m of pendentes || []) {
+      try {
+        await enviarBotoes(m.celular_whatsapp,
+          MSG.moradorTCNotificacao(m.nome, m.condominios?.nome || '', config.LINK_TC),
+          [
+            { id: 'tc_morador_aceito', titulo: 'Li e estou de acordo' },
+            { id: 'tc_morador_recusado', titulo: 'Não concordo' },
+          ]
+        )
+        await db.salvarSessao(m.celular_whatsapp, 'morador_tc', {})
+        enviados++
+      } catch (e) {
+        console.error(`Erro reenvio TC ${m.celular_whatsapp}:`, e.message)
+        falhas++
+      }
+    }
+    res.json({ enviados, falhas, total: (pendentes||[]).length })
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
