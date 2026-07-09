@@ -192,7 +192,7 @@ async function alterarSenhaWebIDFace(ip, senhaAtual, novoLogin, novaSenha, usuar
 
 // ─── CADASTRAR ADMIN FÍSICO ──────────────────────────────────────
 // Cria user_role com role=1 para exigir autenticação no menu do equipamento
-async function cadastrarAdminFisicoIDFace(ip, senha, userId, usuario = 'admin') {
+async function cadastrarAdminFisicoIDFace(ip, senha, userId, usuario = 'admin', pin = null) {
   const base = getBaseUrl(ip)
   const session = await loginIDFace(ip, senha, usuario)
 
@@ -205,20 +205,58 @@ async function cadastrarAdminFisicoIDFace(ip, senha, userId, usuario = 'admin') 
     }),
   })
   const checkData = await resCheck.json()
-  if (checkData?.user_roles?.length > 0) {
-    return { criado: false, mensagem: 'Usuário já é admin no equipamento' }
+  const jaEraAdmin = checkData?.user_roles?.length > 0
+
+  if (!jaEraAdmin) {
+    const res = await fetch(`${base}/create_objects.fcgi?session=${session}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        object: 'user_roles',
+        values: [{ user_id: userId, role: 1 }],
+      }),
+    })
+    if (!res.ok) throw new Error(`iDFace cadastrar admin falhou: ${res.status}`)
   }
+
+  let pinMsg = ''
+  if (pin) {
+    await definirPinIDFaceComSessao(base, session, userId, pin)
+    pinMsg = ' PIN de fallback cadastrado.'
+  }
+
+  const mensagem = (jaEraAdmin ? 'Usuário já era admin no equipamento.' : 'Admin cadastrado — menu do equipamento agora exige autenticação.') + pinMsg
+  return { criado: !jaEraAdmin, mensagem }
+}
+
+// ─── PIN (fallback numérico para autenticação física) ────────────
+async function definirPinIDFaceComSessao(base, session, userId, pin) {
+  // Remove PIN existente do usuário (campo é único por user_id)
+  await fetch(`${base}/destroy_objects.fcgi?session=${session}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      object: 'pins',
+      where: [{ object: 'pins', field: 'user_id', operator: '=', value: userId }]
+    }),
+  })
 
   const res = await fetch(`${base}/create_objects.fcgi?session=${session}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      object: 'user_roles',
-      values: [{ user_id: userId, role: 1 }],
+      object: 'pins',
+      values: [{ user_id: userId, value: String(pin) }],
     }),
   })
-  if (!res.ok) throw new Error(`iDFace cadastrar admin falhou: ${res.status}`)
-  return { criado: true, mensagem: 'Admin cadastrado — menu do equipamento agora exige autenticação' }
+  if (!res.ok) throw new Error(`iDFace cadastrar PIN falhou: ${res.status}`)
+  return true
+}
+
+async function definirPinIDFace(ip, senha, userId, pin, usuario = 'admin') {
+  const base = getBaseUrl(ip)
+  const session = await loginIDFace(ip, senha, usuario)
+  return definirPinIDFaceComSessao(base, session, userId, pin)
 }
 
 // ─── DESATIVAR SSH ───────────────────────────────────────────────
@@ -263,6 +301,7 @@ module.exports = {
   urlParaBase64,
   alterarSenhaWebIDFace,
   cadastrarAdminFisicoIDFace,
+  definirPinIDFace,
   desativarSSHIDFace,
   listarAdminsIDFace,
   cpfParaInt,
