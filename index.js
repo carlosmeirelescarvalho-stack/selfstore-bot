@@ -953,6 +953,16 @@ app.get('/admin/conversas', async (req, res) => {
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
+app.post('/admin/conversas/:celular', async (req, res) => {
+  try {
+    const { texto } = req.body
+    if (!texto || !texto.trim()) return res.status(400).json({ erro: 'Texto é obrigatório' })
+    const { enviarTexto } = require('./whatsapp')
+    await enviarTexto(req.params.celular, texto.trim())
+    res.json({ ok: true })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
 app.get('/admin/conversas/:celular', async (req, res) => {
   try {
     const limite = parseInt(req.query.limite) || 50
