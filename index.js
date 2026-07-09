@@ -545,6 +545,27 @@ app.post('/admin/moradores', async (req, res) => {
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
+app.post('/admin/moradores/:id/foto', upload.single('foto'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ erro: 'Nenhum arquivo enviado' })
+    const supa = getDb()
+    const { data: morador, error } = await supa.from('moradores').select('*, condominios(nome, idface_ip, idface_senha, idface_user)').eq('id', req.params.id).single()
+    if (error) throw error
+    const fotoUrl = await db.uploadFoto(morador.celular_whatsapp, req.file.buffer, req.file.mimetype)
+    await db.atualizarFotoMorador(morador.id, fotoUrl)
+    let syncOk = false
+    if (morador.status === 'aprovado' && morador.condominios?.idface_ip) {
+      try {
+        const { cadastrarRostoIDFace, urlParaBase64 } = require('./idface')
+        const fotoBase64 = await urlParaBase64(fotoUrl)
+        await cadastrarRostoIDFace(morador.condominios.idface_ip, morador.condominios.idface_senha, morador, fotoBase64, morador.condominios.idface_user || 'admin')
+        syncOk = true
+      } catch (e) { console.error('Erro sync iDFace foto:', e.message) }
+    }
+    res.json({ foto_url: fotoUrl, idface_sync: syncOk })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
 app.post('/admin/importar/preview', upload.single('planilha'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ erro: 'Nenhum arquivo enviado' })

@@ -129,6 +129,11 @@ tr:hover td{background:var(--bg)}
 .avatar{width:32px;height:32px;border-radius:50%;background:var(--accent-l);
   display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;
   color:var(--accent);flex-shrink:0}
+.btn-upload-foto{position:absolute;bottom:-2px;right:-2px;width:20px;height:20px;border-radius:50%;
+  background:var(--accent);color:#fff;border:2px solid var(--card);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;font-size:10px;padding:0;
+  opacity:0;transition:opacity .15s}
+td:hover .btn-upload-foto{opacity:1}
 
 /* EMPTY */
 .empty{text-align:center;padding:40px 20px;color:var(--muted)}
@@ -998,9 +1003,15 @@ function renderMoradoresTbody() {
   const statusLabel = {pendente:'Pendente',aprovado:'Aprovado',rejeitado:'Rejeitado',bloqueado:'Bloqueado'}
   document.getElementById('moradores-tbody').innerHTML = data.map(m => `
     <tr>
-      <td>${m.foto_url
+      <td style="position:relative">
+        ${m.foto_url
         ? `<img src="${m.foto_url}" style="width:36px;height:36px;border-radius:50%;object-fit:cover;cursor:pointer" onclick="abrirFoto('${m.foto_url}')">`
-        : `<div class="avatar">${iniciais(m.nome)}</div>`}</td>
+        : `<div class="avatar">${iniciais(m.nome)}</div>`}
+        <button class="btn-upload-foto" onclick="document.getElementById('foto-input-${m.id}').click()" title="${m.foto_url?'Trocar foto':'Adicionar foto'}">
+          <i class="ti ti-camera"></i>
+        </button>
+        <input type="file" id="foto-input-${m.id}" accept="image/*" style="display:none" onchange="uploadFotoMorador('${m.id}',this)">
+      </td>
       <td><div><div class="td-name">${m.nome}</div>
         <div class="td-meta">CPF: ${fmtCPFstr(m.cpf)}</div></div></td>
       <td style="font-family:'DM Mono',monospace;font-size:12px;white-space:nowrap">${fmtCelular(m.celular_whatsapp)}</td>
@@ -1069,6 +1080,23 @@ async function reenviarTCBatch() {
     const r = await api('/admin/moradores/reenviar-tc-batch', {method:'POST'})
     notif(`T&C reenviado para ${r.enviados} morador(es)${r.falhas?` (${r.falhas} falha(s))`:''}.`)
   } catch(e) { notif('Erro ao reenviar T&C em batch.') }
+}
+
+async function uploadFotoMorador(id, input) {
+  if (!input.files?.length) return
+  const file = input.files[0]
+  if (file.size > 5 * 1024 * 1024) { alert('Arquivo muito grande (máx 5MB)'); input.value=''; return }
+  const form = new FormData()
+  form.append('foto', file)
+  try {
+    const r = await fetch(`${API}/admin/moradores/${id}/foto`, {
+      method: 'POST', headers: { 'Authorization': 'Bearer ' + localStorage.getItem('admin_key') }, body: form
+    }).then(r => r.json())
+    if (r.erro) throw new Error(r.erro)
+    notif(`Foto atualizada!${r.idface_sync ? ' iDFace sincronizado.' : ''}`)
+    carregarMoradores()
+  } catch(e) { notif('Erro ao enviar foto: ' + e.message) }
+  input.value = ''
 }
 
 // ── CADASTRO MANUAL ───────────────────────────────────────────────
