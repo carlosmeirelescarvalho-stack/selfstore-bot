@@ -20,10 +20,23 @@ app.use(express.json({ limit: '20mb' }))
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*')
   res.header('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS')
-  res.header('Access-Control-Allow-Headers', 'Content-Type,X-ESP32-Secret')
+  res.header('Access-Control-Allow-Headers', 'Content-Type,X-ESP32-Secret,Authorization')
   if (req.method === 'OPTIONS') return res.sendStatus(200)
   next()
 })
+
+// ─── AUTH MIDDLEWARE — protege /admin/* ───────────────────────────
+function autenticarAdmin(req, res, next) {
+  if (!config.ADMIN_API_KEY) {
+    return res.status(500).json({ erro: 'ADMIN_API_KEY não configurada no servidor.' })
+  }
+  const auth = req.headers.authorization
+  if (!auth || !auth.startsWith('Bearer ') || auth.slice(7) !== config.ADMIN_API_KEY) {
+    return res.status(401).json({ erro: 'Não autorizado. API key inválida ou ausente.' })
+  }
+  next()
+}
+app.use('/admin', autenticarAdmin)
 
 // ─── CRON — limpeza de sessões abandonadas (8h São Paulo) ─────────
 cron.schedule('0 8 * * *', async () => {

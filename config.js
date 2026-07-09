@@ -31,4 +31,7 @@ module.exports = {
 
   // URL dos Termos e Condições
   LINK_TC: process.env.LINK_TC || 'https://selfstore-bot-production.up.railway.app/termos',
+
+  // API Key para proteger endpoints /admin/*
+  ADMIN_API_KEY: process.env.ADMIN_API_KEY,
 }

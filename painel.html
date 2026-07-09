@@ -240,12 +240,10 @@ th.sortable:hover{color:var(--text)}
     <div class="login-sub">SelfStore — acesso exclusivo</div>
     <div id="login-alert" class="alert"></div>
     <div class="form-group">
-      <label class="form-label">E-mail</label>
-      <input class="form-input" id="login-email" type="email" placeholder="admin@selfstore.com" autofocus>
-    </div>
-    <div class="form-group">
-      <label class="form-label">Senha</label>
-      <input class="form-input" id="login-senha" type="password" placeholder="Sua senha" onkeydown="if(event.key==='Enter')doLogin()">
+      <label class="form-label">Chave de acesso (API Key)</label>
+      <input class="form-input" id="login-apikey" type="password" placeholder="Cole a chave de acesso" autofocus
+        onkeydown="if(event.key==='Enter')doLogin()">
+      <div class="form-hint">Solicite a chave ao administrador do sistema</div>
     </div>
     <button class="btn btn-primary" style="width:100%;justify-content:center;padding:11px" onclick="doLogin()">
       Entrar
@@ -624,31 +622,44 @@ th.sortable:hover{color:var(--text)}
 const API = window.location.origin
 
 // ── AUTH ──────────────────────────────────────────────────────────
-const ADMIN_EMAIL = 'admin@selfstore.com'
-const ADMIN_SENHA = 'selfstore2025'
+let _apiKey = localStorage.getItem('selfstore_api_key') || ''
 
 let filtroAtual = 'todos'
 let importFile = null
 let condominiosCache = []
 
-function doLogin() {
-  const email = document.getElementById('login-email').value.trim()
-  const senha = document.getElementById('login-senha').value
+async function doLogin() {
+  const key = document.getElementById('login-apikey').value.trim()
   const a = document.getElementById('login-alert')
-  if(email !== ADMIN_EMAIL || senha !== ADMIN_SENHA) {
-    a.className = 'alert alert-error show'
-    a.textContent = 'E-mail ou senha incorretos.'
-    return
+  if(!key) { a.className = 'alert alert-error show'; a.textContent = 'Informe a chave de acesso.'; return }
+  _apiKey = key
+  try {
+    const res = await fetch(API + '/admin/stats', { headers: { 'Authorization': 'Bearer ' + _apiKey } })
+    if(res.status === 401 || res.status === 403) {
+      a.className = 'alert alert-error show'; a.textContent = 'Chave de acesso inválida.'; _apiKey = ''; return
+    }
+    if(res.status === 500) {
+      const body = await res.json().catch(()=>({}))
+      a.className = 'alert alert-error show'; a.textContent = body.erro || 'Erro no servidor.'; _apiKey = ''; return
+    }
+  } catch(e) {
+    a.className = 'alert alert-error show'; a.textContent = 'Não foi possível conectar ao servidor.'; _apiKey = ''; return
   }
+  localStorage.setItem('selfstore_api_key', _apiKey)
   document.getElementById('login-screen').style.display = 'none'
   document.getElementById('app').style.display = 'flex'
   init()
 }
 
 function logout() {
+  _apiKey = ''
+  localStorage.removeItem('selfstore_api_key')
   document.getElementById('login-screen').style.display = 'flex'
   document.getElementById('app').style.display = 'none'
 }
+
+// Auto-login se key salva
+if(_apiKey) { doLogin() }
 
 // ── INIT ──────────────────────────────────────────────────────────
 async function init() {
@@ -676,9 +687,9 @@ function nav(page, el) {
 
 // ── FETCH HELPER ──────────────────────────────────────────────────
 async function api(path, opts={}) {
-  const res = await fetch(API + path, {
-    headers:{'Content-Type':'application/json'}, ...opts
-  })
+  const headers = { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + _apiKey, ...(opts.headers||{}) }
+  const res = await fetch(API + path, { ...opts, headers })
+  if(res.status === 401) { logout(); throw new Error('Sessão expirada') }
   return res.json()
 }
 
@@ -941,7 +952,7 @@ async function handleFile(file) {
   const fd = new FormData()
   fd.append('planilha', file)
   fd.append('condominio_id', document.getElementById('import-cond').value)
-  const res = await fetch(API+'/admin/importar/preview', {method:'POST', body:fd}).then(r=>r.json())
+  const res = await fetch(API+'/admin/importar/preview', {method:'POST', body:fd, headers:{'Authorization':'Bearer '+_apiKey}}).then(r=>r.json())
   document.getElementById('import-step-1').style.display='none'
   document.getElementById('import-step-2').style.display='block'
   const a = document.getElementById('import-alert')
@@ -960,7 +971,7 @@ async function confirmarImport() {
   const fd = new FormData()
   fd.append('planilha', importFile)
   fd.append('condominio_id', document.getElementById('import-cond').value)
-  const res = await fetch(API+'/admin/importar/confirmar', {method:'POST', body:fd}).then(r=>r.json())
+  const res = await fetch(API+'/admin/importar/confirmar', {method:'POST', body:fd, headers:{'Authorization':'Bearer '+_apiKey}}).then(r=>r.json())
   fecharModal('modal-import')
   notif(`${res.importados} moradores importados!`)
   carregarMoradores()
