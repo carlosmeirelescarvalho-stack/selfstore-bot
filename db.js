@@ -255,6 +255,24 @@ async function buscarMensagensPorCelular(celular, limite) {
   return (data || []).reverse()
 }
 
+async function listarContatosRecentes(limite) {
+  const { data, error } = await supabase()
+    .from('mensagens_bot')
+    .select('celular, criado_em, conteudo, direcao')
+    .order('criado_em', { ascending: false })
+    .limit(500)
+  if (error) return []
+  const map = {}
+  for (const m of (data || [])) {
+    if (!map[m.celular]) {
+      map[m.celular] = { celular: m.celular, ultima_msg: m.criado_em, preview: m.conteudo, direcao: m.direcao }
+    }
+  }
+  return Object.values(map)
+    .sort((a, b) => new Date(b.ultima_msg) - new Date(a.ultima_msg))
+    .slice(0, limite || 30)
+}
+
 // ─── LOGS ─────────────────────────────────────────────────────────
 
 async function registrarLog(moradorId, geladeiraId, tipo, resultado, detalhes) {
@@ -451,4 +469,5 @@ module.exports = {
   listarMoradoresPorStatus,
   contarPendentes,
   buscarMoradorParaAcao,
+  listarContatosRecentes,
 }
