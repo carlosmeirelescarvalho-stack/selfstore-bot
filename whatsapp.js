@@ -2,62 +2,69 @@
 
 const config = require('./config')
 const db = require('./db')
+const { comRetry } = require('./retry')
 
 const GRAPH_URL = 'https://graph.facebook.com/v21.0'
 
 async function enviarTexto(celular, texto) {
-  const res = await fetch(`${GRAPH_URL}/${config.META_PHONE_NUMBER_ID}/messages`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.META_ACCESS_TOKEN}`,
-    },
-    body: JSON.stringify({
-      messaging_product: 'whatsapp',
-      to: celular,
-      type: 'text',
-      text: { body: texto },
-    }),
-  })
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`WhatsApp sendText error: ${err}`)
-  }
+  const result = await comRetry(async () => {
+    const res = await fetch(`${GRAPH_URL}/${config.META_PHONE_NUMBER_ID}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.META_ACCESS_TOKEN}`,
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: celular,
+        type: 'text',
+        text: { body: texto },
+      }),
+    })
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(`WhatsApp sendText error: ${err}`)
+    }
+    return res.json()
+  }, { label: `enviarTexto(${celular})` })
   db.registrarMensagem(celular, 'enviada', texto, 'texto')
-  return res.json()
+  return result
 }
 
 // botoes = [{ id: 'btn_id', titulo: 'Texto do botao' }, ...] (max 3)
 async function enviarBotoes(celular, corpo, botoes) {
-  const res = await fetch(`${GRAPH_URL}/${config.META_PHONE_NUMBER_ID}/messages`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${config.META_ACCESS_TOKEN}`,
-    },
-    body: JSON.stringify({
-      messaging_product: 'whatsapp',
-      to: celular,
-      type: 'interactive',
-      interactive: {
-        type: 'button',
-        body: { text: corpo },
-        action: {
-          buttons: botoes.map(b => ({
-            type: 'reply',
-            reply: { id: b.id, title: b.titulo },
-          })),
-        },
+  const result = await comRetry(async () => {
+    const res = await fetch(`${GRAPH_URL}/${config.META_PHONE_NUMBER_ID}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.META_ACCESS_TOKEN}`,
       },
-    }),
-  })
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`WhatsApp sendButtons error: ${err}`)
-  }
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to: celular,
+        type: 'interactive',
+        interactive: {
+          type: 'button',
+          body: { text: corpo },
+          action: {
+            buttons: botoes.map(b => ({
+              type: 'reply',
+              reply: { id: b.id, title: b.titulo },
+            })),
+          },
+        },
+      }),
+    })
+    if (!res.ok) {
+      const err = await res.text()
+      throw new Error(`WhatsApp sendButtons error: ${err}`)
+    }
+    return res.json()
+  }, { label: `enviarBotoes(${celular})` })
   const botoesTexto = botoes.map(b => b.titulo).join(' | ')
   db.registrarMensagem(celular, 'enviada', `${corpo}\n[${botoesTexto}]`, 'interativo')
-  return res.json()
+  return result
 }
 
 async function notificarAdmin(texto, condominioId) {
