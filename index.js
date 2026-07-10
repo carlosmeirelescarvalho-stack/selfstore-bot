@@ -378,31 +378,54 @@ async function handleAtendimentoMotivo(celular, texto) {
   await enviarTexto(celular, '✅ Seus dados foram encaminhados para nosso time de suporte. Em breve entrarão em contato!')
 }
 
-// ─── WEBHOOK iDFace ───────────────────────────────────────────────
+// ─── WEBHOOK iDFace (monitor push — /dao) ────────────────────────
+const IDFACE_EVENT_GRANTED = new Set([6, 7])
+
+async function processarAcessoIDFace(userId, eventCode) {
+  const negado = !IDFACE_EVENT_GRANTED.has(eventCode)
+  const morador = await db.buscarMoradorPorCpfNumerico(userId)
+  await db.registrarLog(morador?.id || null, null, 'facial',
+    negado ? 'negado' : 'aberto',
+    `cpf:${userId} ev:${eventCode}`)
+
+  if (!negado && morador) {
+    db.atualizarUltimoAcesso(morador.id)
+  }
+  if (negado && morador?.status === 'bloqueado' && podeAlertarBloqueio(morador.id)) {
+    const hora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+    await notificarAdmin(
+      `⚠️ *Tentativa de acesso — morador bloqueado*\n\n` +
+      `Morador: ${morador.nome}\n` +
+      `Via: Reconhecimento facial (iDFace)\n` +
+      `Horário: ${hora}`,
+      morador.condominio_id
+    )
+  }
+}
+
+app.post('/webhook/idface/dao', async (req, res) => {
+  res.sendStatus(200)
+  try {
+    const changes = req.body?.object_changes || []
+    for (const change of changes) {
+      if (change.object !== 'access_logs' || change.type !== 'inserted') continue
+      const v = change.values
+      if (!v?.user_id || v.user_id === '0') continue
+      await processarAcessoIDFace(parseInt(v.user_id), parseInt(v.event))
+    }
+  } catch (err) {
+    console.error('Erro webhook iDFace /dao:', err)
+  }
+})
+
+app.post('/webhook/idface/device_is_alive', (req, res) => res.sendStatus(200))
+
 app.post('/webhook/idface', async (req, res) => {
   res.sendStatus(200)
   try {
     const evento = req.body
     if (!evento.user_id) return
-    const negado = evento.result !== 'granted'
-    const morador = await db.buscarMoradorPorCpfNumerico(evento.user_id)
-    await db.registrarLog(morador?.id || null, null, 'facial',
-      negado ? 'negado' : 'aberto',
-      negado ? evento.result : `cpf:${evento.user_id}`)
-
-    if (!negado && morador) {
-      db.atualizarUltimoAcesso(morador.id)
-    }
-    if (negado && morador?.status === 'bloqueado' && podeAlertarBloqueio(morador.id)) {
-      const hora = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
-      await notificarAdmin(
-        `⚠️ *Tentativa de acesso — morador bloqueado*\n\n` +
-        `Morador: ${morador.nome}\n` +
-        `Via: Reconhecimento facial (iDFace)\n` +
-        `Horário: ${hora}`,
-        morador.condominio_id
-      )
-    }
+    await processarAcessoIDFace(evento.user_id, evento.result === 'granted' ? 7 : 3)
   } catch (err) {
     console.error('Erro webhook iDFace:', err)
   }
