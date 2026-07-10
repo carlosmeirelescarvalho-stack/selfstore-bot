@@ -923,24 +923,25 @@ async function carregarDashboard() {
   const { moradores } = await api('/admin/moradores?status=pendente&limit=5').catch(()=>({moradores:[]}))
   const pl = document.getElementById('pending-list')
   if(!moradores || moradores.length===0) {
-    pl.innerHTML='<div class="empty"><i class="ti ti-check"></i><p>Nenhum cadastro pendente</p></div>'; return
+    pl.innerHTML='<div class="empty"><i class="ti ti-check"></i><p>Nenhum cadastro pendente</p></div>'
+  } else {
+    pl.innerHTML = `<div class="table-wrap"><table>
+      <thead><tr><th>Morador</th><th>Condomínio</th><th>Ações</th></tr></thead>
+      <tbody>${moradores.map(m => `
+        <tr>
+          <td><div style="display:flex;align-items:center;gap:8px">
+            <div class="avatar">${iniciais(m.nome)}</div>
+            <div><div class="td-name">${m.nome}</div>
+            <div class="td-meta">${m.bloco} • Apto ${m.unidade}</div></div>
+          </div></td>
+          <td>${m.condominios?.nome||'—'}</td>
+          <td><div class="td-actions">
+            <button class="btn btn-sm btn-success" onclick="aprovar('${m.id}','${m.nome}')">Aprovar</button>
+            <button class="btn btn-sm btn-danger" onclick="rejeitar('${m.id}')">Rejeitar</button>
+          </div></td>
+        </tr>`).join('')}
+      </tbody></table></div>`
   }
-  pl.innerHTML = `<div class="table-wrap"><table>
-    <thead><tr><th>Morador</th><th>Condomínio</th><th>Ações</th></tr></thead>
-    <tbody>${moradores.map(m => `
-      <tr>
-        <td><div style="display:flex;align-items:center;gap:8px">
-          <div class="avatar">${iniciais(m.nome)}</div>
-          <div><div class="td-name">${m.nome}</div>
-          <div class="td-meta">${m.bloco} • Apto ${m.unidade}</div></div>
-        </div></td>
-        <td>${m.condominios?.nome||'—'}</td>
-        <td><div class="td-actions">
-          <button class="btn btn-sm btn-success" onclick="aprovar('${m.id}','${m.nome}')">Aprovar</button>
-          <button class="btn btn-sm btn-danger" onclick="rejeitar('${m.id}')">Rejeitar</button>
-        </div></td>
-      </tr>`).join('')}
-    </tbody></table></div>`
   carregarAcessosDashboard()
   if(_dashInterval) clearInterval(_dashInterval)
   _dashInterval = setInterval(carregarAcessosDashboard, 10000)
@@ -1005,14 +1006,14 @@ function renderListaAcessos() {
     return
   }
   container.innerHTML = logs.map(l => {
-    const m = l.moradores
-    const nome = m?.nome || 'Desconhecido'
-    const cond = m?.condominio_nome || m?.condominios?.nome || '—'
-    const blocoApt = (m?.bloco || '') + (m?.unidade ? ' / Apto ' + m.unidade : '')
-    const gel = l.geladeiras?.nome || 'Porta de entrada'
+    const nome = l.morador_nome || l.moradores?.nome || 'Desconhecido'
+    const cond = l.condominio_nome || '—'
+    const blocoApt = (l.morador_bloco || '') + (l.morador_unidade ? ' / Apto ' + l.morador_unidade : '')
+    const gel = l.geladeira_nome || l.geladeiras?.nome || 'Porta de entrada'
     const hora = new Date(l.criado_em).toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'})
-    const fotoHtml = m?.foto_url
-      ? `<img src="${m.foto_url}" style="width:36px;height:36px;border-radius:50%;object-fit:cover">`
+    const foto = l.morador_foto || l.moradores?.foto_url
+    const fotoHtml = foto
+      ? `<img src="${foto}" style="width:36px;height:36px;border-radius:50%;object-fit:cover">`
       : `<div class="avatar" style="width:36px;height:36px;font-size:12px">${iniciais(nome)}</div>`
     const iconRes = l.resultado === 'aberto'
       ? '<i class="ti ti-check" style="color:var(--success);font-size:11px"></i>'
