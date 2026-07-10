@@ -636,6 +636,31 @@ app.get('/admin/stats', async (req, res) => {
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
+app.get('/admin/dashboard/acessos', async (req, res) => {
+  try {
+    const supa = getDb()
+    const now = new Date()
+    const inicio = new Date(now); inicio.setHours(0,0,0,0)
+    const fim = new Date(now); fim.setHours(23,59,59,999)
+
+    const { data: logs, error } = await supa.from('logs_acesso')
+      .select('*, moradores(nome, foto_url, bloco, unidade, condominio_id, condominios(nome)), geladeiras(nome)')
+      .gte('criado_em', inicio.toISOString())
+      .lte('criado_em', fim.toISOString())
+      .order('criado_em', { ascending: false })
+      .limit(200)
+    if (error) throw error
+
+    const histograma = Array(24).fill(0)
+    for (const l of (logs || [])) {
+      const h = new Date(l.criado_em).getHours()
+      histograma[h]++
+    }
+
+    res.json({ histograma, logs: logs || [] })
+  } catch (err) { res.status(500).json({ erro: err.message }) }
+})
+
 app.get('/admin/logs', async (req, res) => {
   try {
     const { tipo, resultado, limit = 50 } = req.query

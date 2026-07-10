@@ -239,6 +239,8 @@ th.sortable:hover{color:var(--text)}
   #conv-painel-chat.conv-mobile-open{display:flex}
   #conv-painel-lista.conv-mobile-hidden{display:none}
   #conv-container{height:calc(100vh - 56px)}
+  #dash-acessos{flex-direction:column!important}
+  #dash-histograma{flex:none!important;border-right:none!important;border-bottom:1px solid var(--border)}
 }
 </style>
 </head>
@@ -343,9 +345,23 @@ th.sortable:hover{color:var(--text)}
         </div>
       </div>
       <div class="card">
-        <div class="card-header"><span class="card-title">Últimos acessos</span></div>
-        <div class="card-body" id="recent-logs">
-          <div class="loading"><div class="spinner"></div>Carregando...</div>
+        <div class="card-header"><span class="card-title">Acessos hoje</span></div>
+        <div class="card-body" style="padding:0">
+          <div id="dash-acessos" style="display:flex;gap:0;min-height:340px">
+            <div id="dash-histograma" style="flex:0 0 280px;padding:16px;border-right:1px solid var(--border);display:flex;flex-direction:column">
+              <div style="font-size:11px;color:var(--muted);margin-bottom:8px;font-weight:500">Volume por hora</div>
+              <div id="hist-bars" style="flex:1;display:flex;align-items:flex-end;gap:2px;min-height:200px"></div>
+              <div id="hist-labels" style="display:flex;gap:2px;margin-top:4px"></div>
+              <div id="hist-filtro-tag" onclick="filtrarHora(_dashFiltroHora)" style="display:none;margin-top:8px;font-size:11px;color:var(--accent);cursor:pointer">
+                <i class="ti ti-x" style="font-size:12px"></i> Filtrando: <span id="hist-filtro-hora"></span>h — clique para remover
+              </div>
+            </div>
+            <div style="flex:1;min-width:0;overflow-y:auto;max-height:400px">
+              <div id="dash-lista-acessos" style="padding:8px 0">
+                <div class="loading"><div class="spinner"></div>Carregando...</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -867,6 +883,7 @@ function nav(page, el) {
   if(page==='admins') carregarAdmins()
   if(page==='conversas') iniciarConversas()
   if(page!=='conversas') pararPollingConversas()
+  if(page!=='dashboard' && _dashInterval) { clearInterval(_dashInterval); _dashInterval = null }
   document.getElementById('sidebar').classList.remove('open')
 }
 
@@ -924,24 +941,96 @@ async function carregarDashboard() {
         </div></td>
       </tr>`).join('')}
     </tbody></table></div>`
-  // Logs recentes
-  const { logs } = await api('/admin/logs?limit=5').catch(()=>({logs:[]}))
-  const ll = document.getElementById('recent-logs')
-  if(!logs || logs.length===0) {
-    ll.innerHTML='<div class="empty"><i class="ti ti-list"></i><p>Sem acessos registrados</p></div>'; return
+  carregarAcessosDashboard()
+  if(_dashInterval) clearInterval(_dashInterval)
+  _dashInterval = setInterval(carregarAcessosDashboard, 10000)
+}
+
+let _dashInterval = null
+let _dashFiltroHora = null
+let _dashLogs = []
+let _dashHist = []
+
+async function carregarAcessosDashboard() {
+  const raw = await api('/admin/dashboard/acessos').catch(()=>({histograma:Array(24).fill(0),logs:[]}))
+  _dashLogs = raw.logs || []
+  _dashHist = raw.histograma || Array(24).fill(0)
+  renderHistograma()
+  renderListaAcessos()
+}
+
+function renderHistograma() {
+  const max = Math.max(..._dashHist, 1)
+  const barsEl = document.getElementById('hist-bars')
+  const labelsEl = document.getElementById('hist-labels')
+  const horaAtual = new Date().getHours()
+  barsEl.innerHTML = _dashHist.map((v, h) => {
+    const pct = (v / max) * 100
+    const ativo = _dashFiltroHora === h
+    const futuro = h > horaAtual
+    return `<div onclick="filtrarHora(${h})" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;
+      cursor:pointer;min-width:0;height:100%"title="${h}h: ${v} acesso(s)">
+      <div style="font-size:9px;color:var(--muted);margin-bottom:2px">${v||''}</div>
+      <div style="width:100%;min-height:2px;height:${pct}%;border-radius:3px 3px 0 0;transition:height .3s;
+        background:${ativo?'var(--accent)':futuro?'var(--border)':'var(--accent-l)'}"></div>
+    </div>`
+  }).join('')
+  labelsEl.innerHTML = _dashHist.map((_, h) =>
+    `<div style="flex:1;text-align:center;font-size:8px;color:var(--muted)">${h%3===0?h:''}</div>`
+  ).join('')
+  const tag = document.getElementById('hist-filtro-tag')
+  if(_dashFiltroHora !== null) {
+    document.getElementById('hist-filtro-hora').textContent = String(_dashFiltroHora).padStart(2,'0')
+    tag.style.display = 'block'
+  } else {
+    tag.style.display = 'none'
   }
-  ll.innerHTML = logs.map(l => `
-    <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--border)">
-      <div style="width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-        background:${l.resultado==='aberto'?'var(--success-bg)':'var(--danger-bg)'}">
-        <i class="ti ti-${l.resultado==='aberto'?'check':'x'}" style="color:${l.resultado==='aberto'?'var(--success)':'var(--danger)'};font-size:13px"></i>
-      </div>
+}
+
+function filtrarHora(h) {
+  _dashFiltroHora = _dashFiltroHora === h ? null : h
+  renderHistograma()
+  renderListaAcessos()
+}
+
+function renderListaAcessos() {
+  const container = document.getElementById('dash-lista-acessos')
+  let logs = _dashLogs
+  if(_dashFiltroHora !== null) {
+    logs = logs.filter(l => new Date(l.criado_em).getHours() === _dashFiltroHora)
+  }
+  if(!logs.length) {
+    container.innerHTML = '<div class="empty" style="padding:40px 16px"><i class="ti ti-list"></i><p>Sem acessos' +
+      (_dashFiltroHora !== null ? ' neste horário' : ' registrados hoje') + '</p></div>'
+    return
+  }
+  container.innerHTML = logs.map(l => {
+    const m = l.moradores
+    const nome = m?.nome || 'Desconhecido'
+    const cond = m?.condominios?.nome || '—'
+    const blocoApt = (m?.bloco || '') + (m?.unidade ? ' / Apto ' + m.unidade : '')
+    const gel = l.geladeiras?.nome || 'Porta de entrada'
+    const hora = new Date(l.criado_em).toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'})
+    const fotoHtml = m?.foto_url
+      ? `<img src="${m.foto_url}" style="width:36px;height:36px;border-radius:50%;object-fit:cover">`
+      : `<div class="avatar" style="width:36px;height:36px;font-size:12px">${iniciais(nome)}</div>`
+    const iconRes = l.resultado === 'aberto'
+      ? '<i class="ti ti-check" style="color:var(--success);font-size:11px"></i>'
+      : '<i class="ti ti-x" style="color:var(--danger);font-size:11px"></i>'
+    return `<div style="display:flex;align-items:center;gap:10px;padding:8px 16px;border-bottom:1px solid var(--border)">
+      ${fotoHtml}
       <div style="flex:1;min-width:0">
-        <div style="font-size:13px;font-weight:500">${l.moradores?.nome||'Desconhecido'}</div>
-        <div style="font-size:11px;color:var(--muted)">${l.tipo} · ${l.geladeiras?.nome||'Porta de entrada'}</div>
+        <div style="font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${nome}</div>
+        <div style="font-size:11px;color:var(--muted)">${cond}${blocoApt?' · '+blocoApt:''}</div>
       </div>
-      <div style="font-size:11px;color:var(--muted)">${fmtData(l.criado_em)}</div>
-    </div>`).join('')
+      <div style="text-align:right;flex-shrink:0">
+        <div style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px;justify-content:flex-end">
+          ${iconRes} ${l.tipo} · ${gel}
+        </div>
+        <div style="font-size:11px;color:var(--muted);font-weight:500">${hora}</div>
+      </div>
+    </div>`
+  }).join('')
 }
 
 // ── SORT & FILTER HELPERS ─────────────────────────────────────────
