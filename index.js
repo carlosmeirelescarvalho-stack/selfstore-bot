@@ -644,24 +644,42 @@ app.get('/admin/dashboard/acessos', async (req, res) => {
     const fim = new Date(now); fim.setHours(23,59,59,999)
 
     const { data: logs, error } = await supa.from('logs_acesso')
-      .select('*, moradores!left(nome, foto_url, bloco, unidade, condominio_id), geladeiras!left(nome)')
+      .select('*')
       .gte('criado_em', inicio.toISOString())
       .lte('criado_em', fim.toISOString())
       .order('criado_em', { ascending: false })
       .limit(200)
     if (error) throw error
 
-    const condIds = [...new Set((logs || []).map(l => l.moradores?.condominio_id).filter(Boolean))]
-    const condMap = {}
+    const moradorIds = [...new Set((logs || []).map(l => l.morador_id).filter(Boolean))]
+    const geladeiraIds = [...new Set((logs || []).map(l => l.geladeira_id).filter(Boolean))]
+    const moradorMap = {}, geladeiraMap = {}, condMap = {}
+
+    if (moradorIds.length) {
+      const { data: mors } = await supa.from('moradores')
+        .select('id, nome, foto_url, bloco, unidade, condominio_id')
+        .in('id', moradorIds)
+      for (const m of (mors || [])) moradorMap[m.id] = m
+    }
+    if (geladeiraIds.length) {
+      const { data: gels } = await supa.from('geladeiras').select('id, nome').in('id', geladeiraIds)
+      for (const g of (gels || [])) geladeiraMap[g.id] = g
+    }
+    const condIds = [...new Set(Object.values(moradorMap).map(m => m.condominio_id).filter(Boolean))]
     if (condIds.length) {
       const { data: conds } = await supa.from('condominios').select('id, nome').in('id', condIds)
       for (const c of (conds || [])) condMap[c.id] = c.nome
     }
-    for (const l of (logs || [])) {
-      if (l.moradores?.condominio_id) {
-        l.moradores.condominio_nome = condMap[l.moradores.condominio_id] || null
-      }
-    }
+
+    const enriched = (logs || []).map(l => ({
+      ...l,
+      morador_nome: moradorMap[l.morador_id]?.nome || null,
+      morador_foto: moradorMap[l.morador_id]?.foto_url || null,
+      morador_bloco: moradorMap[l.morador_id]?.bloco || null,
+      morador_unidade: moradorMap[l.morador_id]?.unidade || null,
+      condominio_nome: condMap[moradorMap[l.morador_id]?.condominio_id] || null,
+      geladeira_nome: geladeiraMap[l.geladeira_id]?.nome || null,
+    }))
 
     const histograma = Array(24).fill(0)
     for (const l of (logs || [])) {
@@ -669,7 +687,7 @@ app.get('/admin/dashboard/acessos', async (req, res) => {
       histograma[h]++
     }
 
-    res.json({ histograma, logs: logs || [] })
+    res.json({ histograma, logs: enriched })
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
@@ -678,14 +696,32 @@ app.get('/admin/logs', async (req, res) => {
     const { tipo, resultado, limit = 50 } = req.query
     const supa = getDb()
     let q = supa.from('logs_acesso')
-      .select('*, moradores!left(nome), geladeiras!left(nome)')
+      .select('*')
       .order('criado_em', { ascending: false })
       .limit(parseInt(limit))
     if (tipo) q = q.eq('tipo', tipo)
     if (resultado) q = q.eq('resultado', resultado)
     const { data, error } = await q
     if (error) throw error
-    res.json({ logs: data })
+
+    const moradorIds = [...new Set((data || []).map(l => l.morador_id).filter(Boolean))]
+    const geladeiraIds = [...new Set((data || []).map(l => l.geladeira_id).filter(Boolean))]
+    const moradorMap = {}, geladeiraMap = {}
+    if (moradorIds.length) {
+      const { data: mors } = await supa.from('moradores').select('id, nome').in('id', moradorIds)
+      for (const m of (mors || [])) moradorMap[m.id] = m
+    }
+    if (geladeiraIds.length) {
+      const { data: gels } = await supa.from('geladeiras').select('id, nome').in('id', geladeiraIds)
+      for (const g of (gels || [])) geladeiraMap[g.id] = g
+    }
+
+    const logs = (data || []).map(l => ({
+      ...l,
+      moradores: moradorMap[l.morador_id] ? { nome: moradorMap[l.morador_id].nome } : null,
+      geladeiras: geladeiraMap[l.geladeira_id] ? { nome: geladeiraMap[l.geladeira_id].nome } : null,
+    }))
+    res.json({ logs })
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })
 
