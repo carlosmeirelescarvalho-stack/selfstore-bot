@@ -939,15 +939,16 @@ app.get('/admin/conversas', async (req, res) => {
     const contatos = await db.listarContatosRecentes(50)
     const supa = getDb()
     const celulares = contatos.map(c => c.celular)
-    const { data: moradores } = await supa.from('moradores').select('celular_whatsapp, nome, foto_url').in('celular_whatsapp', celulares)
+    const { data: moradores } = await supa.from('moradores').select('celular_whatsapp, nome, foto_url, condominios(nome)').in('celular_whatsapp', celulares)
     const nomeMap = {}
     for (const m of (moradores || [])) {
-      nomeMap[m.celular_whatsapp] = { nome: m.nome, foto: m.foto_url }
+      nomeMap[m.celular_whatsapp] = { nome: m.nome, foto: m.foto_url, condominio: m.condominios?.nome || null }
     }
     const result = contatos.map(c => ({
       ...c,
       nome: nomeMap[c.celular]?.nome || null,
-      foto: nomeMap[c.celular]?.foto || null
+      foto: nomeMap[c.celular]?.foto || null,
+      condominio: nomeMap[c.celular]?.condominio || null
     }))
     res.json({ contatos: result })
   } catch (err) { res.status(500).json({ erro: err.message }) }
