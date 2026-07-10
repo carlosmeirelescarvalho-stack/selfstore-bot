@@ -1007,7 +1007,7 @@ function renderListaAcessos() {
   container.innerHTML = logs.map(l => {
     const m = l.moradores
     const nome = m?.nome || 'Desconhecido'
-    const cond = m?.condominios?.nome || '—'
+    const cond = m?.condominio_nome || m?.condominios?.nome || '—'
     const blocoApt = (m?.bloco || '') + (m?.unidade ? ' / Apto ' + m.unidade : '')
     const gel = l.geladeiras?.nome || 'Porta de entrada'
     const hora = new Date(l.criado_em).toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'})

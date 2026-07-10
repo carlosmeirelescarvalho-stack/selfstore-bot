@@ -644,12 +644,24 @@ app.get('/admin/dashboard/acessos', async (req, res) => {
     const fim = new Date(now); fim.setHours(23,59,59,999)
 
     const { data: logs, error } = await supa.from('logs_acesso')
-      .select('*, moradores(nome, foto_url, bloco, unidade, condominio_id, condominios(nome)), geladeiras(nome)')
+      .select('*, moradores!left(nome, foto_url, bloco, unidade, condominio_id), geladeiras!left(nome)')
       .gte('criado_em', inicio.toISOString())
       .lte('criado_em', fim.toISOString())
       .order('criado_em', { ascending: false })
       .limit(200)
     if (error) throw error
+
+    const condIds = [...new Set((logs || []).map(l => l.moradores?.condominio_id).filter(Boolean))]
+    const condMap = {}
+    if (condIds.length) {
+      const { data: conds } = await supa.from('condominios').select('id, nome').in('id', condIds)
+      for (const c of (conds || [])) condMap[c.id] = c.nome
+    }
+    for (const l of (logs || [])) {
+      if (l.moradores?.condominio_id) {
+        l.moradores.condominio_nome = condMap[l.moradores.condominio_id] || null
+      }
+    }
 
     const histograma = Array(24).fill(0)
     for (const l of (logs || [])) {
@@ -666,7 +678,7 @@ app.get('/admin/logs', async (req, res) => {
     const { tipo, resultado, limit = 50 } = req.query
     const supa = getDb()
     let q = supa.from('logs_acesso')
-      .select('*, moradores(nome), geladeiras(nome)')
+      .select('*, moradores!left(nome), geladeiras!left(nome)')
       .order('criado_em', { ascending: false })
       .limit(parseInt(limit))
     if (tipo) q = q.eq('tipo', tipo)
