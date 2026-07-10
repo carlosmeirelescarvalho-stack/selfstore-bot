@@ -1871,7 +1871,7 @@ function renderContatos() {
   const busca = (document.getElementById('conv-busca')?.value || '').toLowerCase()
   const lista = _convContatos.filter(c => {
     if (!busca) return true
-    return (c.nome||'').toLowerCase().includes(busca) || c.celular.includes(busca)
+    return (c.nome||'').toLowerCase().includes(busca) || c.celular.includes(busca) || (c.condominio||'').toLowerCase().includes(busca)
   })
   const el = document.getElementById('conv-lista')
   if (!lista.length) { el.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);font-size:13px">Nenhuma conversa</div>'; return }
@@ -1914,8 +1914,8 @@ async function abrirConversa(cel) {
   const contato = _convContatos.find(c => c.celular === cel)
   const nome = contato?.nome || formatarCel(cel)
   const foto = contato?.foto ? `<img src="${contato.foto}" style="width:36px;height:36px;border-radius:50%;object-fit:cover">` : `<div style="width:36px;height:36px;border-radius:50%;background:var(--border);display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--muted)"><i class="ti ti-user"></i></div>`
-  const btnVoltar = _convIsMobile() ? `<button onclick="voltarListaConversas()" style="background:none;border:none;color:var(--text);cursor:pointer;padding:4px;margin-right:2px;font-size:18px"><i class="ti ti-arrow-left"></i></button>` : ''
-  document.getElementById('conv-header').innerHTML = `${btnVoltar}${foto}<div><div style="font-size:14px;font-weight:500">${nome}</div><div style="font-size:11px;color:var(--muted)">${cel}</div></div>`
+  const cond = contato?.condominio ? `<span style="font-size:10px;color:var(--muted);background:var(--bg);padding:1px 6px;border-radius:4px;margin-left:6px">${contato.condominio}</span>` : ''
+  document.getElementById('conv-header').innerHTML = `<button onclick="voltarListaConversas()" style="background:none;border:none;color:var(--text);cursor:pointer;padding:4px;margin-right:2px;font-size:18px"><i class="ti ti-arrow-left"></i></button>${foto}<div style="min-width:0"><div style="font-size:14px;font-weight:500;display:flex;align-items:center;flex-wrap:wrap">${nome}${cond}</div><div style="font-size:11px;color:var(--muted)">${formatarCel(cel)}</div></div>`
   if (_convIsMobile()) {
     document.getElementById('conv-painel-lista').classList.add('conv-mobile-hidden')
     document.getElementById('conv-painel-chat').classList.add('conv-mobile-open')
