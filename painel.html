@@ -234,10 +234,13 @@ th.sortable:hover{color:var(--text)}
   .topbar-search{display:none}
   .metrics{grid-template-columns:1fr 1fr}
   #conv-container{flex-direction:column;border:none;border-radius:0}
-  #conv-painel-lista{width:100%;min-width:0;border-right:none;border-bottom:1px solid var(--border)}
-  #conv-painel-chat{display:none}
-  #conv-painel-chat.conv-mobile-open{display:flex}
-  #conv-painel-lista.conv-mobile-hidden{display:none}
+  /* !important necessário: os painéis têm display/width inline que, sem isto,
+     vencem o media query e impedem o toggle mobile (lista some / chat some).
+     Mesmo padrão usado em #dash-acessos/#dash-histograma abaixo. */
+  #conv-painel-lista{width:100%!important;min-width:0!important;border-right:none;border-bottom:1px solid var(--border)}
+  #conv-painel-chat{display:none!important}
+  #conv-painel-chat.conv-mobile-open{display:flex!important}
+  #conv-painel-lista.conv-mobile-hidden{display:none!important}
   #conv-container{height:calc(100vh - 56px)}
   #dash-acessos{flex-direction:column!important}
   #dash-histograma{flex:none!important;border-right:none!important;border-bottom:1px solid var(--border)}
