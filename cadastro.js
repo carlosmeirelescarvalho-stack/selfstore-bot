@@ -302,6 +302,17 @@ async function finalizarCadastro(celular, dados, imagemBase64) {
 async function sincronizarComIDFace(morador, fotoBase64, condominio) {
   try {
     if (!condominio?.idface_ip || !condominio?.idface_senha) return false
+    // No fluxo de auto-aprovação a imagem é enviada ao Storage no passo "foto" e
+    // o base64 não chega até aqui — só a foto_url. Busca a imagem de volta pela
+    // URL (mesmo caminho usado na re-aprovação pelo painel) para não pular o sync.
+    if (!fotoBase64 && morador?.foto_url) {
+      try {
+        const { urlParaBase64 } = require('./idface')
+        fotoBase64 = await urlParaBase64(morador.foto_url)
+      } catch (e) {
+        console.error('Erro ao buscar foto por URL para sync iDFace:', e.message)
+      }
+    }
     if (!fotoBase64) return false
     const { cadastrarRostoIDFace } = require('./idface')
     const { comRetry } = require('./retry')
