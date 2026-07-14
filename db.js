@@ -166,6 +166,16 @@ async function listarCondominios() {
   return data
 }
 
+async function buscarCondominioPorId(id) {
+  const { data, error } = await supabase()
+    .from('condominios')
+    .select('*')
+    .eq('id', id)
+    .single()
+  if (error && error.code !== 'PGRST116') throw error
+  return data
+}
+
 // ─── BLOCOS ───────────────────────────────────────────────────────
 
 async function listarBlocosPorCondominio(condominioId) {
@@ -449,6 +459,7 @@ module.exports = {
   deletarSessao,
   buscarSessoesAbandonadas,
   buscarCondominioPorNome,
+  buscarCondominioPorId,
   listarCondominios,
   listarBlocosPorCondominio,
   buscarGeladeiraPorCodigo,
