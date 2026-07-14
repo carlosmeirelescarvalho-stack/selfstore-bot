@@ -479,10 +479,15 @@ app.delete('/admin/moradores/:id', async (req, res) => {
   try {
     const supa = getDb()
     const { data: morador } = await supa.from('moradores').select('*, condominios(*)').eq('id', req.params.id).single()
-    if (morador?.foto_url && morador?.condominios?.idface_ip) {
+    if (morador?.cpf && morador?.condominios?.idface_ip && morador?.condominios?.idface_senha) {
       try {
-        const { removerRostoIDFace } = require('./idface')
-        if (removerRostoIDFace) await removerRostoIDFace(morador.condominios.idface_ip, morador.condominios.idface_senha, morador.id, morador.condominios.idface_user || 'admin')
+        const { removerUsuarioIDFace } = require('./idface')
+        await removerUsuarioIDFace(
+          morador.condominios.idface_ip,
+          morador.condominios.idface_senha,
+          morador.cpf,
+          morador.condominios.idface_user || 'admin'
+        )
       } catch(e) { console.error('Erro ao remover do iDFace:', e.message) }
     }
     await db.deletarMorador(req.params.id)
