@@ -2021,7 +2021,9 @@ async function abrirConversa(cel) {
   const ta = document.getElementById('conv-texto')
   ta.value = ''
   ta.style.height = 'auto'
-  ta.focus()
+  // No mobile NÃO auto-focar: abrir o teclado rola a página e empurra o
+  // cabeçalho (com botão voltar) para fora da tela. Foco só no desktop.
+  if (!_convIsMobile()) ta.focus()
   ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarMsgPainel() } }
 }
 
