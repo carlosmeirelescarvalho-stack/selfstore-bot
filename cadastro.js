@@ -247,8 +247,10 @@ async function enviarListaBlocos(celular, dados) {
 }
 
 async function finalizarCadastro(celular, dados, imagemBase64) {
-  const condominios = await db.listarCondominios()
-  const condominio = condominios.find(c => c.id === dados.condominio_id)
+  // Busca o registro COMPLETO do condomínio (com idface_ip/idface_senha). O
+  // listarCondominios() só traz id/nome/flag, o que fazia o sync do iDFace
+  // abortar no guard de credenciais durante a auto-aprovação.
+  const condominio = await db.buscarCondominioPorId(dados.condominio_id)
     || await db.buscarCondominioPorNome(dados.condominio_nome)
 
   const dataNascISO = dataParaISO(dados.data_nasc)
