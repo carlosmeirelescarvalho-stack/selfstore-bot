@@ -379,7 +379,10 @@ async function handleAtendimentoMotivo(celular, texto) {
 }
 
 // ─── WEBHOOK iDFace (monitor push — /dao) ────────────────────────
-const IDFACE_EVENT_GRANTED = new Set([6, 7])
+// Códigos do campo access_logs.event (Control iD):
+// 3=não identificado, 6=acesso NEGADO, 7=acesso CONCEDIDO, 11=botoeira, 12=web.
+// Só 7 representa liberação por reconhecimento facial.
+const IDFACE_EVENT_GRANTED = new Set([7])
 
 async function processarAcessoIDFace(userId, eventCode) {
   const negado = !IDFACE_EVENT_GRANTED.has(eventCode)
