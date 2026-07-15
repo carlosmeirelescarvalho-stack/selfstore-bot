@@ -2043,9 +2043,9 @@ async function abrirConversa(cel) {
     document.getElementById('conv-painel-chat').classList.add('conv-mobile-open')
     ajustarAlturaChatMobile()
   }
-  await carregarMensagensChat(cel)
-  clearInterval(_convTimerMsgs)
-  _convTimerMsgs = setInterval(() => carregarMensagensChat(cel), 8000)
+  // Mostra a caixa de texto IMEDIATAMENTE ao abrir o chat — não depende do
+  // carregamento das mensagens (async, pode demorar/travar). Isso garante que
+  // todo chat selecionado tenha a caixa disponível.
   const inputBar = document.getElementById('conv-input')
   inputBar.style.display = 'flex'
   const ta = document.getElementById('conv-texto')
@@ -2055,6 +2055,10 @@ async function abrirConversa(cel) {
   // cabeçalho (com botão voltar) para fora da tela. Foco só no desktop.
   if (!_convIsMobile()) ta.focus()
   ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarMsgPainel() } }
+
+  await carregarMensagensChat(cel)
+  clearInterval(_convTimerMsgs)
+  _convTimerMsgs = setInterval(() => carregarMensagensChat(cel), 8000)
 }
 
 async function enviarMsgPainel() {
