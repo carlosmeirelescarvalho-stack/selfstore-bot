@@ -226,6 +226,13 @@ th.sortable:hover{color:var(--text)}
   background:var(--card);outline:none;box-sizing:border-box;appearance:auto}
 .col-filter:focus{border-color:var(--accent)}
 
+/* Conversas — min-height:0 permite que #conv-msgs role dentro do flex.
+   Sem isto, o padrão min-height:auto dos filhos flex expande o chat até o
+   tamanho do conteúdo e trava o scroll (mensagens ficam inacessíveis). */
+#conv-painel-chat{min-height:0}
+#conv-msgs{min-height:0}
+#conv-header,#conv-input{flex-shrink:0}
+
 @media(max-width:640px){
   .sidebar{position:fixed;left:-220px;z-index:50;transition:left .2s;height:100vh}
   .sidebar.open{left:0}
@@ -239,7 +246,10 @@ th.sortable:hover{color:var(--text)}
      Mesmo padrão usado em #dash-acessos/#dash-histograma abaixo. */
   #conv-painel-lista{width:100%!important;min-width:0!important;border-right:none;border-bottom:1px solid var(--border)}
   #conv-painel-chat{display:none!important}
-  #conv-painel-chat.conv-mobile-open{display:flex!important}
+  /* Chat aberto no mobile = overlay fixo do tamanho da viewport VISÍVEL.
+     height:100dvh é fallback; o JS (ajustarAlturaChatMobile) refina via
+     visualViewport para ser keyboard-safe. z-index acima da sidebar(50). */
+  #conv-painel-chat.conv-mobile-open{display:flex!important;position:fixed;left:0;top:0;width:100%;height:100dvh;z-index:60}
   #conv-painel-lista.conv-mobile-hidden{display:none!important}
   #conv-container{height:calc(100vh - 56px)}
   #dash-acessos{flex-direction:column!important}
@@ -1992,8 +2002,27 @@ function filtrarContatos() { renderContatos() }
 
 function _convIsMobile() { return window.innerWidth <= 640 }
 
+// Keyboard-safe: dimensiona o overlay do chat à viewport VISÍVEL (acima do
+// teclado). visualViewport encolhe quando o teclado abre; recalculamos aqui
+// para manter header no topo, input logo acima do teclado e msgs rolando.
+function ajustarAlturaChatMobile() {
+  const chat = document.getElementById('conv-painel-chat')
+  if (!_convIsMobile() || !chat.classList.contains('conv-mobile-open')) return
+  const vv = window.visualViewport
+  if (!vv) return
+  chat.style.height = vv.height + 'px'
+  chat.style.top = vv.offsetTop + 'px'
+}
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', ajustarAlturaChatMobile)
+  window.visualViewport.addEventListener('scroll', ajustarAlturaChatMobile)
+}
+
 function voltarListaConversas() {
-  document.getElementById('conv-painel-chat').classList.remove('conv-mobile-open')
+  const chat = document.getElementById('conv-painel-chat')
+  chat.classList.remove('conv-mobile-open')
+  chat.style.height = ''
+  chat.style.top = ''
   document.getElementById('conv-painel-lista').classList.remove('conv-mobile-hidden')
   _convCelAtivo = null
   clearInterval(_convTimerMsgs)
@@ -2012,10 +2041,11 @@ async function abrirConversa(cel) {
   if (_convIsMobile()) {
     document.getElementById('conv-painel-lista').classList.add('conv-mobile-hidden')
     document.getElementById('conv-painel-chat').classList.add('conv-mobile-open')
+    ajustarAlturaChatMobile()
   }
-  await carregarMensagensChat(cel)
-  clearInterval(_convTimerMsgs)
-  _convTimerMsgs = setInterval(() => carregarMensagensChat(cel), 8000)
+  // Mostra a caixa de texto IMEDIATAMENTE ao abrir o chat — não depende do
+  // carregamento das mensagens (async, pode demorar/travar). Isso garante que
+  // todo chat selecionado tenha a caixa disponível.
   const inputBar = document.getElementById('conv-input')
   inputBar.style.display = 'flex'
   const ta = document.getElementById('conv-texto')
@@ -2025,6 +2055,10 @@ async function abrirConversa(cel) {
   // cabeçalho (com botão voltar) para fora da tela. Foco só no desktop.
   if (!_convIsMobile()) ta.focus()
   ta.onkeydown = e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); enviarMsgPainel() } }
+
+  await carregarMensagensChat(cel)
+  clearInterval(_convTimerMsgs)
+  _convTimerMsgs = setInterval(() => carregarMensagensChat(cel), 8000)
 }
 
 async function enviarMsgPainel() {
