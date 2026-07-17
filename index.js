@@ -422,6 +422,10 @@ app.post('/webhook/idface/dao', async (req, res) => {
 })
 
 app.post('/webhook/idface/device_is_alive', (req, res) => res.sendStatus(200))
+app.post('/webhook/idface/secbox', (req, res) => res.sendStatus(200))
+app.post('/webhook/idface/door', (req, res) => res.sendStatus(200))
+app.post('/webhook/idface/access_photo', (req, res) => res.sendStatus(200))
+app.post('/webhook/idface/operation_mode', (req, res) => res.sendStatus(200))
 
 app.post('/webhook/idface', async (req, res) => {
   res.sendStatus(200)
