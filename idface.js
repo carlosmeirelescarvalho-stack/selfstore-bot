@@ -326,4 +326,5 @@ module.exports = {
   desativarSSHIDFace,
   listarAdminsIDFace,
   cpfParaInt,
+  redimensionarParaIDFace,
 }
