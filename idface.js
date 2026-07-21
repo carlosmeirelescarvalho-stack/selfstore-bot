@@ -17,6 +17,25 @@ function cpfParaInt(cpf) {
   return parseInt(String(cpf).replace(/\D/g, ''), 10)
 }
 
+// O iDFace rejeita imagens acima de 1920x1080 ("Image too long"). Fotos de
+// celular costumam ser maiores (ex.: 2160x3840), o que fazia o enrollment
+// falhar silenciosamente. Reduz mantendo a proporção; em caso de erro, devolve
+// o buffer original para não quebrar o fluxo de fotos já dentro do limite.
+async function redimensionarParaIDFace(buffer) {
+  try {
+    const Jimp = require('jimp')
+    const img = await Jimp.read(buffer)
+    if (img.bitmap.width > 1920 || img.bitmap.height > 1080) {
+      img.scaleToFit(1920, 1080)
+      return await img.getBufferAsync(Jimp.MIME_JPEG)
+    }
+    return buffer
+  } catch (e) {
+    console.error('iDFace: falha ao redimensionar foto (usando original):', e.message)
+    return buffer
+  }
+}
+
 // ─── LOGIN ────────────────────────────────────────────────────────
 // POST /login.fcgi
 async function loginIDFace(ip, senha, usuario = 'admin') {
@@ -87,7 +106,9 @@ async function cadastrarRostoIDFace(ip, senha, morador, fotoBase64, usuario = 'a
   // 3. Envia foto via user_set_image.fcgi
   // Content-Type: application/octet-stream — foto como bytes binários
   // Parâmetros passados na query string: user_id, timestamp, match
-  const fotoBuffer = Buffer.from(fotoBase64, 'base64')
+  // O iDFace rejeita imagens acima de 1920x1080 ("Image too long"), então
+  // redimensiona antes de enviar (fotos de celular costumam ser maiores).
+  const fotoBuffer = await redimensionarParaIDFace(Buffer.from(fotoBase64, 'base64'))
   const timestamp = Math.floor(Date.now() / 1000)
 
   const resFoto = await fetch(
