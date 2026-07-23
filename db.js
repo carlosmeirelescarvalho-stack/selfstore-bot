@@ -231,7 +231,7 @@ async function inserirComandoGeladeira(geladeiraId, moradorId) {
   const { error } = await supabase().from('comandos_esp32').insert([{
     geladeira_id: geladeiraId,
     morador_id: moradorId,
-    comando: 'abrir',
+    acao: 'abrir',
     status: 'pendente',
     criado_em: new Date().toISOString(),
   }])
