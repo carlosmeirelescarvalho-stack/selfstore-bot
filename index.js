@@ -1013,6 +1013,51 @@ app.post('/esp32/heartbeat', async (req, res) => {
   }
 })
 
+// ESP32/Pi polling — busca próximo comando pendente
+app.get('/esp32/comandos', async (req, res) => {
+  try {
+    const secret = req.headers['x-esp32-secret']
+    if (secret !== config.ESP32_SECRET) return res.sendStatus(401)
+    const nome = req.query.geladeira
+    if (!nome) return res.json({})
+    const supa = getDb()
+    const { data: gel } = await supa.from('geladeiras').select('id').ilike('nome', `%${nome}%`).single()
+    if (!gel) return res.json({})
+    const { data: cmd } = await supa.from('comandos_esp32')
+      .select('*')
+      .eq('geladeira_id', gel.id)
+      .eq('status', 'pendente')
+      .order('criado_em')
+      .limit(1)
+      .single()
+    if (!cmd) return res.json({})
+    res.json({ action: cmd.acao, comando_id: cmd.id })
+  } catch (err) {
+    if (err.code === 'PGRST116') return res.json({})
+    console.error('Erro /esp32/comandos:', err)
+    res.json({})
+  }
+})
+
+// ESP32/Pi polling — confirma execução do comando
+app.post('/esp32/comandos/ack', async (req, res) => {
+  try {
+    const secret = req.headers['x-esp32-secret']
+    if (secret !== config.ESP32_SECRET) return res.sendStatus(401)
+    const { comando_id } = req.body
+    if (!comando_id) return res.sendStatus(400)
+    const supa = getDb()
+    await supa.from('comandos_esp32').update({
+      status: 'executado',
+      executado_em: new Date().toISOString(),
+    }).eq('id', comando_id)
+    res.sendStatus(200)
+  } catch (err) {
+    console.error('Erro /esp32/comandos/ack:', err)
+    res.sendStatus(500)
+  }
+})
+
 // ─── HELPERS ──────────────────────────────────────────────────────
 
 function detectarTipo(msg) {
