@@ -24,7 +24,16 @@ function formatarCPF(cpf) {
   return limpo.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '$1.$2.$3-$4')
 }
 
-// Aceita DD/MM/AAAA ou DD/MM/AA (regra de seculo: AA <= 30 -> 2000, AA > 30 -> 1900)
+// Regra de seculo para ano com 2 digitos: AA <= 30 -> 2000, AA > 30 -> 1900
+function anoComSeculo(aa) {
+  const aaNum = parseInt(aa)
+  return aaNum <= 30 ? 2000 + aaNum : 1900 + aaNum
+}
+
+// Aceita, com ou sem separador: DD/MM/AAAA, DD/MM/AA, DDMMAAAA, DDMMAA,
+// "DD MM AAAA"/"DD MM AA" (espacos) e ISO YYYY-MM-DD (do banco).
+// A instrucao ao morador continua pedindo DD/MM/AAAA; formatos extras sao
+// aceitos silenciosamente para reduzir friccao no teclado numerico do celular.
 function parseDataNascimento(dataNasc) {
   if (!dataNasc || typeof dataNasc !== 'string') return null
   const str = dataNasc.trim()
@@ -40,8 +49,28 @@ function parseDataNascimento(dataNasc) {
   const matchShort = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/)
   if (matchShort) {
     const [, dia, mes, aa] = matchShort
-    const aaNum = parseInt(aa)
-    const ano = aaNum <= 30 ? 2000 + aaNum : 1900 + aaNum
+    return new Date(anoComSeculo(aa), parseInt(mes) - 1, parseInt(dia))
+  }
+
+  // Formato DDMMAAAA (8 digitos, sem separador) - ano literal
+  const match8 = str.match(/^(\d{2})(\d{2})(\d{4})$/)
+  if (match8) {
+    const [, dia, mes, ano] = match8
+    return new Date(parseInt(ano), parseInt(mes) - 1, parseInt(dia))
+  }
+
+  // Formato DDMMAA (6 digitos, sem separador) - regra de seculo
+  const match6 = str.match(/^(\d{2})(\d{2})(\d{2})$/)
+  if (match6) {
+    const [, dia, mes, aa] = match6
+    return new Date(anoComSeculo(aa), parseInt(mes) - 1, parseInt(dia))
+  }
+
+  // Formato com espacos: "DD MM AAAA" ou "DD MM AA"
+  const matchEsp = str.match(/^(\d{1,2})\s+(\d{1,2})\s+(\d{2,4})$/)
+  if (matchEsp) {
+    const [, dia, mes, anoRaw] = matchEsp
+    const ano = anoRaw.length === 2 ? anoComSeculo(anoRaw) : parseInt(anoRaw)
     return new Date(ano, parseInt(mes) - 1, parseInt(dia))
   }
 
