@@ -232,6 +232,8 @@ th.sortable:hover{color:var(--text)}
 #conv-painel-chat{min-height:0}
 #conv-msgs{min-height:0}
 #conv-header,#conv-input{flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinning{display:inline-block;animation:spin .6s linear infinite}
 
 @media(max-width:640px){
   .sidebar{position:fixed;left:-220px;z-index:50;transition:left .2s;height:100vh}
@@ -472,8 +474,9 @@ th.sortable:hover{color:var(--text)}
       <div id="conv-container" style="display:flex;height:calc(100vh - 72px);gap:0;border-radius:10px;overflow:hidden;border:1px solid var(--border)">
         <!-- Lista contatos -->
         <div id="conv-painel-lista" style="width:320px;min-width:280px;border-right:1px solid var(--border);display:flex;flex-direction:column;background:var(--card)">
-          <div style="padding:10px 12px;border-bottom:1px solid var(--border)">
-            <input class="form-input" id="conv-busca" type="text" placeholder="Buscar contato..." oninput="filtrarContatos()" style="font-size:13px;padding:7px 12px">
+          <div style="padding:10px 12px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center">
+            <input class="form-input" id="conv-busca" type="text" placeholder="Buscar contato..." oninput="filtrarContatos()" style="font-size:13px;padding:7px 12px;flex:1;min-width:0">
+            <button onclick="refreshContatos(this)" title="Atualizar lista" style="flex-shrink:0;width:34px;height:34px;border-radius:8px;border:1px solid var(--border);background:var(--bg);color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center"><i class="ti ti-refresh" style="font-size:16px"></i></button>
           </div>
           <div id="conv-lista" style="flex:1;overflow-y:auto"></div>
         </div>
@@ -1975,6 +1978,20 @@ async function carregarContatos() {
   } catch(e) {}
 }
 
+// Refresh manual da lista de contatos (gira o icone enquanto carrega).
+async function refreshContatos(btn) {
+  const ic = btn && btn.querySelector('i')
+  ic && ic.classList.add('spinning')
+  try { await carregarContatos() } finally { ic && ic.classList.remove('spinning') }
+}
+
+// Refresh manual do chat aberto (util no mobile, onde o polling e menos obvio).
+async function refreshChat(btn) {
+  const ic = btn && btn.querySelector('i')
+  ic && ic.classList.add('spinning')
+  try { if (_convCelAtivo) await carregarMensagensChat(_convCelAtivo) } finally { ic && ic.classList.remove('spinning') }
+}
+
 function renderContatos() {
   const busca = (document.getElementById('conv-busca')?.value || '').toLowerCase()
   const lista = _convContatos.filter(c => {
@@ -2045,7 +2062,7 @@ async function abrirConversa(cel) {
   const nome = contato?.nome || formatarCel(cel)
   const foto = contato?.foto ? `<img src="${contato.foto}" style="width:36px;height:36px;border-radius:50%;object-fit:cover">` : `<div style="width:36px;height:36px;border-radius:50%;background:var(--border);display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--muted)"><i class="ti ti-user"></i></div>`
   const cond = contato?.condominio ? `<span style="font-size:10px;color:var(--muted);background:var(--bg);padding:1px 6px;border-radius:4px;margin-left:6px">${contato.condominio}</span>` : ''
-  document.getElementById('conv-header').innerHTML = `<button onclick="voltarListaConversas()" style="background:none;border:none;color:var(--text);cursor:pointer;padding:4px;margin-right:2px;font-size:18px"><i class="ti ti-arrow-left"></i></button>${foto}<div style="min-width:0"><div style="font-size:14px;font-weight:500;display:flex;align-items:center;flex-wrap:wrap">${nome}${cond}</div><div style="font-size:11px;color:var(--muted)">${formatarCel(cel)}</div></div>`
+  document.getElementById('conv-header').innerHTML = `<button onclick="voltarListaConversas()" style="background:none;border:none;color:var(--text);cursor:pointer;padding:4px;margin-right:2px;font-size:18px"><i class="ti ti-arrow-left"></i></button>${foto}<div style="min-width:0"><div style="font-size:14px;font-weight:500;display:flex;align-items:center;flex-wrap:wrap">${nome}${cond}</div><div style="font-size:11px;color:var(--muted)">${formatarCel(cel)}</div></div><button onclick="refreshChat(this)" title="Atualizar conversa" style="margin-left:auto;flex-shrink:0;width:36px;height:36px;border-radius:8px;border:none;background:none;color:var(--muted);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:18px"><i class="ti ti-refresh"></i></button>`
   if (_convIsMobile()) {
     document.getElementById('conv-painel-lista').classList.add('conv-mobile-hidden')
     document.getElementById('conv-painel-chat').classList.add('conv-mobile-open')
