@@ -3,7 +3,7 @@
 const db = require('./db')
 const config = require('./config')
 const { enviarTexto, enviarBotoes, notificarAdmin, iniciarAtendimentoHumano, MSG } = require('./whatsapp')
-const { validarCPF, validarDataNascimento, validarNomeCompleto, validarUnidade, dataParaISO, formatarDataNasc, numEmoji } = require('./validacao')
+const { validarCPF, validarDataNascimento, validarNomeCompleto, validarUnidade, dataParaISO, formatarDataNasc } = require('./validacao')
 
 async function handleCadastro(celular, mensagem, tipoMensagem, imagemBase64, buttonId) {
   try {
@@ -36,7 +36,7 @@ async function iniciarCadastro(celular, condominioPreDefinido) {
   }
 
   const condominios = await db.listarCondominios()
-  const lista = condominios.map((c, i) => `${numEmoji(i + 1)} ${c.nome}`).join('\n')
+  const lista = condominios.map((c, i) => `${i + 1}. ${c.nome}`).join('\n')
   await db.salvarSessao(celular, 'condominio', { _condominios: condominios })
   await enviarTexto(celular, MSG.selecionarCondominio(lista))
 }
@@ -236,7 +236,7 @@ async function voltarConfirmacao(celular, dados) {
 async function enviarListaBlocos(celular, dados) {
   const blocos = await db.listarBlocosPorCondominio(dados.condominio_id)
   if (blocos.length > 0) {
-    const lista = blocos.map((b, i) => `${numEmoji(i + 1)} ${b.nome}`).join('\n')
+    const lista = blocos.map((b, i) => `${i + 1}. ${b.nome}`).join('\n')
     dados._blocos = blocos
     await db.salvarSessao(celular, 'bloco', dados)
     await enviarTexto(celular, MSG.coletarBloco(lista))
