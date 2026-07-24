@@ -1086,7 +1086,7 @@ function extrairButtonId(msg) {
 // ── CONVERSAS ──
 app.get('/admin/conversas', async (req, res) => {
   try {
-    const contatos = await db.listarContatosRecentes(50)
+    const contatos = await db.listarContatosRecentes(200)
     const supa = getDb()
     const celulares = contatos.map(c => c.celular)
     const { data: moradores } = await supa.from('moradores').select('celular_whatsapp, nome, foto_url, condominios(nome)').in('celular_whatsapp', celulares)
@@ -1117,7 +1117,8 @@ app.post('/admin/conversas/:celular', async (req, res) => {
 app.get('/admin/conversas/:celular', async (req, res) => {
   try {
     const limite = parseInt(req.query.limite) || 50
-    const msgs = await db.buscarMensagensPorCelular(req.params.celular, limite)
+    const offset = parseInt(req.query.offset) || 0
+    const msgs = await db.buscarMensagensPorCelular(req.params.celular, limite, offset)
     res.json({ mensagens: msgs })
   } catch (err) { res.status(500).json({ erro: err.message }) }
 })

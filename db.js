@@ -254,13 +254,15 @@ async function registrarMensagem(celular, direcao, conteudo, tipo, sessaoId) {
   }
 }
 
-async function buscarMensagensPorCelular(celular, limite) {
+async function buscarMensagensPorCelular(celular, limite, offset) {
+  const lim = limite || 20
+  const off = offset || 0
   const { data, error } = await supabase()
     .from('mensagens_bot')
     .select('*')
     .eq('celular', celular)
     .order('criado_em', { ascending: false })
-    .limit(limite || 20)
+    .range(off, off + lim - 1)
   if (error) return []
   return (data || []).reverse()
 }
@@ -270,7 +272,7 @@ async function listarContatosRecentes(limite) {
     .from('mensagens_bot')
     .select('celular, criado_em, conteudo, direcao')
     .order('criado_em', { ascending: false })
-    .limit(500)
+    .limit(2000)
   if (error) return []
   const map = {}
   for (const m of (data || [])) {

@@ -1950,6 +1950,11 @@ function downloadQR() {
 
 // ── CONVERSAS ────────────────────────────────────────────────────
 let _convContatos = [], _convCelAtivo = null, _convTimer = null, _convTimerMsgs = null
+// Historico do chat aberto: _convMsgs guarda TODAS as mensagens ja carregadas
+// (antigas + recentes), deduplicadas por id. Permite "carregar anteriores" sem
+// que o polling (que busca so as recentes) descarte o historico ja carregado.
+let _convMsgs = [], _convTemMaisAntigas = false, _convCarregandoAntigas = false
+const CONV_LIMITE = 80
 
 function pararPollingConversas() {
   clearInterval(_convTimer); clearInterval(_convTimerMsgs)
@@ -2025,6 +2030,7 @@ function voltarListaConversas() {
   chat.style.top = ''
   document.getElementById('conv-painel-lista').classList.remove('conv-mobile-hidden')
   _convCelAtivo = null
+  _convMsgs = []; _convTemMaisAntigas = false
   clearInterval(_convTimerMsgs)
   document.getElementById('conv-input').style.display = 'none'
   renderContatos()
@@ -2032,6 +2038,8 @@ function voltarListaConversas() {
 
 async function abrirConversa(cel) {
   _convCelAtivo = cel
+  _convMsgs = []; _convTemMaisAntigas = false; _convCarregandoAntigas = false
+  document.getElementById('conv-msgs').innerHTML = ''
   renderContatos()
   const contato = _convContatos.find(c => c.celular === cel)
   const nome = contato?.nome || formatarCel(cel)
@@ -2077,20 +2085,57 @@ async function enviarMsgPainel() {
   btn.disabled = false; ta.disabled = false; ta.focus()
 }
 
+// Funde novas mensagens no array local, deduplicando por id e reordenando por
+// data. Usada tanto pelo polling (mensagens recentes) quanto pelo "carregar
+// anteriores" (mensagens antigas), sem descartar o que ja foi carregado.
+function mergeMensagens(novas) {
+  const porId = new Map(_convMsgs.map(m => [m.id, m]))
+  for (const m of (novas || [])) porId.set(m.id, m)
+  _convMsgs = [...porId.values()].sort((a, b) => new Date(a.criado_em) - new Date(b.criado_em))
+}
+
 async function carregarMensagensChat(cel) {
   if (_convCelAtivo !== cel) return
   try {
-    const { mensagens } = await api(`/admin/conversas/${cel}?limite=80`)
-    renderMensagens(mensagens || [])
+    const { mensagens } = await api(`/admin/conversas/${cel}?limite=${CONV_LIMITE}`)
+    const novas = mensagens || []
+    // Na primeira carga do chat, se veio o limite cheio ha historico anterior.
+    if (_convMsgs.length === 0) _convTemMaisAntigas = novas.length >= CONV_LIMITE
+    mergeMensagens(novas)
+    if (_convCelAtivo !== cel) return
+    renderMensagens()
   } catch(e) {}
 }
 
-function renderMensagens(msgs) {
+async function carregarMaisAntigas() {
+  if (_convCarregandoAntigas || !_convCelAtivo) return
+  _convCarregandoAntigas = true
+  const btn = document.getElementById('conv-btn-mais')
+  if (btn) { btn.disabled = true; btn.textContent = 'Carregando...' }
+  const el = document.getElementById('conv-msgs')
+  const oldH = el.scrollHeight, oldTop = el.scrollTop
+  try {
+    const cel = _convCelAtivo
+    const { mensagens } = await api(`/admin/conversas/${cel}?limite=${CONV_LIMITE}&offset=${_convMsgs.length}`)
+    const antigas = mensagens || []
+    if (antigas.length < CONV_LIMITE) _convTemMaisAntigas = false
+    mergeMensagens(antigas)
+    if (_convCelAtivo !== cel) return
+    renderMensagens({ scroll: 'preserve', oldHeight: oldH, oldTop })
+  } catch(e) {}
+  _convCarregandoAntigas = false
+}
+
+function renderMensagens(opts) {
+  opts = opts || {}
   const el = document.getElementById('conv-msgs')
   const wasAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60
   let lastDate = ''
   let html = ''
-  for (const m of msgs) {
+  if (_convTemMaisAntigas) {
+    html += `<div style="text-align:center;margin:4px 0 8px;flex-shrink:0"><button id="conv-btn-mais" onclick="carregarMaisAntigas()" style="background:var(--card);border:1px solid var(--border);color:var(--accent);font-size:12px;padding:5px 14px;border-radius:14px;cursor:pointer">Carregar mensagens anteriores</button></div>`
+  }
+  for (const m of _convMsgs) {
     const dt = new Date(m.criado_em)
     const dateStr = dt.toLocaleDateString('pt-BR')
     if (dateStr !== lastDate) {
@@ -2110,7 +2155,13 @@ function renderMensagens(msgs) {
     </div>`
   }
   el.innerHTML = html
-  if (wasAtBottom) el.scrollTop = el.scrollHeight
+  if (opts.scroll === 'preserve') {
+    // Apos prepend das mensagens antigas, manter o usuario na mesma posicao:
+    // desloca o scroll pela altura de conteudo adicionada no topo.
+    el.scrollTop = opts.oldTop + (el.scrollHeight - opts.oldHeight)
+  } else if (wasAtBottom) {
+    el.scrollTop = el.scrollHeight
+  }
 }
 
 function formatarCel(c) {
